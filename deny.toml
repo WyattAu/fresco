@@ -1,0 +1,19 @@
+# cargo-deny gate: runs before first publish (estate invariant 11h).
+# fresco 0.1.0 ships zero external runtime dependencies; this config
+# exists so the gate is green by construction and stays wired.
+
+[advisories]
+version = 2
+yanked = "deny"
+
+[licenses]
+version = 2
+allow = ["MIT", "Apache-2.0", "Apache-2.0 WITH LLVM-exception"]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

@@ -1,0 +1,9 @@
+/target
+Cargo.lock.bak
+**/*.rs.bk
+*.swp
+.envrc
+.direnv/
+coverage/
+*.lcov
+*.lcinfo

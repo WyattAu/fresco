@@ -1,0 +1,18 @@
+fresco: modular retained-mode UI engine for Rust
+
+fresco: WyattAu estate UI engine. Crates: path-kit (L0 geometry),
+anim-kit (L0 closed-form springs), scene-kit (L1 retained scene, damage
+tracking), layout-kit (L1 incremental layout, no_std), paint-kit (L2 CPU
+raster, exact coverage), render-conformance (L3 golden images,
+unpublished).
+
+Spec: SPEC.md (REQ-P*, REQ-A*, REQ-S*, REQ-L*, REQ-R*, REQ-C*).
+Contract: AGENTS.md. Decisions: docs/adr/ADR-0001..0004.
+Paradigm index (651 to 1050): docs/paradigms.md.
+Layering: L0 std zero-dep (layout-kit additionally no_std+alloc);
+L1 std, internal deps only; L2 std; L3 dev-only.
+Commands: cargo test --workspace --all-features; cargo clippy --workspace
+--all-targets --all-features -- -D warnings; cargo fmt --all -- --check.
+Rules: forbid(unsafe_code) everywhere; lints deny panic/unwrap/expect;
+indexing_slicing denied in src, allowed in test modules; MSRV 1.92;
+edition 2024.

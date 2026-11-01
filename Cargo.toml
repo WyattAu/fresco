@@ -1,0 +1,29 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/path-kit",
+    "crates/anim-kit",
+    "crates/scene-kit",
+    "crates/layout-kit",
+    "crates/paint-kit",
+    "crates/render-conformance",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.92"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/WyattAu/fresco"
+
+[workspace.dependencies]
+path-kit = { path = "crates/path-kit", version = "0.1.0" }
+anim-kit = { path = "crates/anim-kit", version = "0.1.0" }
+scene-kit = { path = "crates/scene-kit", version = "0.1.0" }
+layout-kit = { path = "crates/layout-kit", version = "0.1.0" }
+paint-kit = { path = "crates/paint-kit", version = "0.1.0" }
+criterion = "0.7"
+
+[profile.release]
+lto = "fat"
+codegen-units = 1

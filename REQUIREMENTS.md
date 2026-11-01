@@ -1,0 +1,54 @@
+# REQUIREMENTS
+
+Traceability for the fresco engine. REQ identifiers match `SPEC.md` section
+4; acceptance oracles are test names, not prose claims.
+
+## R1 Geometry (path-kit)
+
+- REQ-P1 flatten tolerance honored against true curve, recursive subdivision
+  capped, endpoints exact.
+- REQ-P2 orientation predicate robust: correct sign where naive f64 gives
+  zero (determinants to 1e17).
+- REQ-P3 arc length exact on lines, 1e-3 relative on the kappa-circle.
+- REQ-P4 dashing preserves total on+off length within one pattern cycle.
+- REQ-P5 stroked rect outline bounds equal rect inflated by half width.
+
+## R2 Animation (anim-kit)
+
+- REQ-A1 closed-form springs match numeric integration to 1e-6; initial
+  position and velocity satisfied.
+- REQ-A2 settle time bound: |u(t_settle)| <= epsilon * scale.
+- REQ-A3 overdamped springs with zero initial velocity never overshoot.
+
+## R3 Raster (paint-kit)
+
+- REQ-R1 coverage: rect fill exact, triangle within 1 percent of analytic.
+- REQ-R2 fill rules: NonZero honors opposite-oriented holes; EvenOdd parity
+  reduction makes nested same-orientation outlines solid with hollow cores.
+- REQ-R3 compositing is premultiplied and associative on test cases.
+- REQ-R4 no unsafe; scalar code is the reference; SIMD is optimization only.
+
+## R4 Scene (scene-kit)
+
+- REQ-S1 arena generation safety: stale handles miss, slots reused with new
+  generation.
+- REQ-S2 damage plans: plans cover all invalidations; regions preferred when
+  coalescing threshold holds.
+- REQ-S3 flatten order by (layer, depth, seq); transforms compose.
+
+## R5 Layout (layout-kit)
+
+- REQ-L1 measure cache: hits on identical inputs, misses on generation bump
+  or input hash change.
+- REQ-L2 flex solver: grow, shrink, gap, clamps per single-axis rules.
+
+## R6 Conformance (render-conformance)
+
+- REQ-C1 golden compare: pass/fail per channel delta and mismatch budget,
+  BMP diff artifact on failure, stable FNV-1a hashing.
+
+## R7 Process
+
+- Tier B coverage (80 percent) per published crate.
+- `render-conformance` publish = false.
+- No crate publishes without a recorded consumer (estate ADR-0005).

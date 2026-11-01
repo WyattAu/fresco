@@ -1,0 +1,28 @@
+[package]
+name = "render-conformance"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Golden-image differential harness for the fresco UI engine (dev-only, unpublished)"
+keywords = ["testing", "graphics", "conformance"]
+categories = ["development-tools", "graphics"]
+publish = false
+exclude = ["/target"]
+
+[dependencies]
+
+[dev-dependencies]
+paint-kit = { workspace = true }
+path-kit = { workspace = true }
+
+[lints.rust]
+missing_docs = "deny"
+unsafe_code = "forbid"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"

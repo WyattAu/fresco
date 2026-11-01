@@ -1,0 +1,23 @@
+[package]
+name = "anim-kit"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Closed-form damped-spring animation for the fresco UI engine: no per-frame integration, frame-rate independent"
+keywords = ["animation", "spring", "easing", "graphics"]
+categories = ["graphics", "mathematics"]
+exclude = ["/target"]
+
+[dependencies]
+
+[lints.rust]
+missing_docs = "deny"
+unsafe_code = "forbid"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
