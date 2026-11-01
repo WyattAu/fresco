@@ -120,7 +120,7 @@ impl Surface {
             let start = y * self.stride;
             let end = start + self.width * 4;
             if let Some(row) = self.data.get_mut(start..end) {
-                for chunk in row.chunks_exact_mut(4) {
+                for chunk in row.as_chunks_mut::<4>().0 {
                     for (slot, src) in chunk.iter_mut().zip(color) {
                         *slot = src;
                     }
