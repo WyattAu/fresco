@@ -47,7 +47,32 @@ Traceability for the fresco engine. REQ identifiers match `SPEC.md` section
 - REQ-C1 golden compare: pass/fail per channel delta and mismatch budget,
   BMP diff artifact on failure, stable FNV-1a hashing.
 
-## R7 Process
+## R7 Windowing (window-kit)
+
+- REQ-W1 facade event delivery in script order (fake backend).
+- REQ-W2 DPI scale math round-trips.
+- REQ-W3 present size validation and capture.
+- REQ-W4 frame clock statistics defined at the edges.
+- Platform backends (winit) compile under --all-features; runtime window
+  behavior is exercised by the consumer app, not CI.
+
+## R8 Text (text-kit)
+
+- REQ-T1 deterministic shaping (fake engine).
+- REQ-T2 greedy space wrapping within budget.
+- REQ-T3 atlas packing without overlap; coverage round-trip.
+- REQ-T4 LRU eviction keeps the atlas placeable.
+- Parley backend (feature `parley`) compiles; glyph fidelity is gated by
+  font-conformance at the estate level, not here.
+
+## R9 Paint breadth (paint-kit)
+
+- REQ-G1/G2 gradient sampling semantics (linear projection, radial
+  distance, premultiplied lerp, clamped t).
+- REQ-G3 clip stack as intersecting scissors.
+- REQ-I1 nearest-neighbor image blits with premultiplied compositing.
+
+## R10 Process
 
 - Tier B coverage (80 percent) per published crate.
 - `render-conformance` publish = false.

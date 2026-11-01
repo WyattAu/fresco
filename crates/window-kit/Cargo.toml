@@ -1,0 +1,31 @@
+[package]
+name = "window-kit"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Windowing facade for the fresco UI engine: estate-owned traits, winit backend, software present path"
+keywords = ["windowing", "gui", "winit", "graphics"]
+categories = ["graphics", "gui"]
+exclude = ["/target"]
+
+[features]
+default = ["winit"]
+winit = ["dep:winit", "dep:softbuffer"]
+
+[dependencies]
+winit = { version = "0.30", optional = true }
+softbuffer = { version = "0.4", optional = true }
+
+[dev-dependencies]
+
+[lints.rust]
+missing_docs = "deny"
+unsafe_code = "forbid"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"

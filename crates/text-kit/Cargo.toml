@@ -1,0 +1,28 @@
+[package]
+name = "text-kit"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Text engine trait for the fresco UI engine (ADR-0002): shaping, layout, glyph atlas; Parley backend behind a feature"
+keywords = ["text", "shaping", "layout", "typography", "gui"]
+categories = ["graphics", "text-processing"]
+exclude = ["/target"]
+
+[features]
+default = []
+parley = ["dep:parley"]
+
+[dependencies]
+parley = { version = "0.12", optional = true, default-features = false, features = ["std"] }
+
+[lints.rust]
+missing_docs = "deny"
+unsafe_code = "forbid"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"

@@ -22,6 +22,9 @@ them. Rule: no row may stay "applied" if the code stops doing it.
 | 852 | DirectComposition virtual-surface tiles = damage regions | `scene-kit` `FramePlan::Regions` is the tile source of truth on Windows |
 | 858 | Per-monitor-v2 DPI as continuous affine transform | `scene-kit` root `Affine`; logical coords are scene-invariant |
 | 876 | Focus as affine/linear-token state | reserved: widget-kit focus chain (compile-time single-owner) |
+| 887 | Glyph atlas shelf packing with LRU | `text-kit` `GlyphAtlas` (applied 0.2.0) |
+| 956/958/990 | Fractional/per-monitor DPI as continuous scale | `window-kit` scale facade + root affine plan (applied at facade level) |
+| 959/992/1017/1032 | Platform frame-clock pacing | `window-kit` `FrameClock`/`Ticker` measurement contract; native clocks are backend upgrades |
 
 ## 2. Next phases, by crate
 

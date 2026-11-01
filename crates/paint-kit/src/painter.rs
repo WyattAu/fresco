@@ -1,5 +1,6 @@
 //! Painter: fill API over surfaces, tying flattening to rasterization.
 
+use crate::paint::Paint;
 use crate::raster::{build_edges, rasterize_polys};
 use crate::{Affine, FillRule, Rect, Surface, Vec2, premultiply};
 
@@ -39,6 +40,54 @@ pub struct Painter {
     cov: Vec<f32>,
     active: Vec<(f64, f64, f64)>,
     edges: Vec<crate::raster::Edge>,
+    clips: Vec<Rect>,
+}
+
+/// A decoded image: premultiplied RGBA8, row-major, tight stride.
+#[derive(Clone, Debug)]
+pub struct Image {
+    /// Pixel width.
+    pub width: usize,
+    /// Pixel height.
+    pub height: usize,
+    /// `width * height * 4` premultiplied bytes.
+    pub data: Vec<u8>,
+}
+
+impl Image {
+    /// New image from premultiplied bytes; validates the length.
+    #[must_use]
+    pub fn new(width: usize, height: usize, data: Vec<u8>) -> Option<Image> {
+        let len = width.checked_mul(height)?.checked_mul(4)?;
+        if data.len() != len {
+            return None;
+        }
+        Some(Image {
+            width,
+            height,
+            data,
+        })
+    }
+
+    /// Sample with nearest-neighbor scaling into a unit rect position.
+    fn sample(&self, u: f64, v: f64) -> [u8; 4] {
+        let x = (u.clamp(0.0, 1.0) * f64::from(u32::try_from(self.width).unwrap_or(1))).floor()
+            as usize;
+        let y = (v.clamp(0.0, 1.0) * f64::from(u32::try_from(self.height).unwrap_or(1))).floor()
+            as usize;
+        let base = y
+            .saturating_mul(self.width)
+            .saturating_add(x)
+            .saturating_mul(4);
+        let mut px = [0_u8; 4];
+        for (slot, b) in px
+            .iter_mut()
+            .zip(self.data.get(base..base + 4).unwrap_or(&[]))
+        {
+            *slot = *b;
+        }
+        px
+    }
 }
 
 impl Painter {
@@ -50,7 +99,31 @@ impl Painter {
             cov: Vec::new(),
             active: Vec::new(),
             edges: Vec::new(),
+            clips: Vec::new(),
         }
+    }
+
+    /// Push an axis-aligned clip (scissor). Intersects the current clip.
+    pub fn push_clip(&mut self, rect: Rect) {
+        let next = match self.clips.last() {
+            Some(current) => match current.intersect(rect) {
+                Some(r) => r,
+                None => Rect::from_size(Vec2::ZERO, Vec2::ZERO),
+            },
+            None => rect,
+        };
+        self.clips.push(next);
+    }
+
+    /// Pop the last clip.
+    pub fn pop_clip(&mut self) {
+        self.clips.pop();
+    }
+
+    /// Active clip (empty rect means nothing draws).
+    #[must_use]
+    pub fn clip(&self) -> Option<Rect> {
+        self.clips.last().copied()
     }
 
     /// Current tolerance.
@@ -66,7 +139,7 @@ impl Painter {
         path: &crate::Path,
         transform: Affine,
         rule: FillRule,
-        paint: &Solid,
+        paint: &Paint,
     ) {
         let polys = path.flatten(self.tolerance);
         self.fill_polys(surface, &polys, transform, rule, paint);
@@ -81,7 +154,7 @@ impl Painter {
         polys: &[Poly],
         transform: Affine,
         rule: FillRule,
-        paint: &Solid,
+        paint: &Paint,
     ) {
         let device: Vec<Poly> = transform_polys(polys, transform);
         let prepared = match rule {
@@ -93,28 +166,84 @@ impl Painter {
     }
 
     /// Fill already-device-space polygon slices.
-    pub fn fill_slices(&mut self, surface: &mut Surface, polys: &[&[Vec2]], paint: &Solid) {
+    pub fn fill_slices(&mut self, surface: &mut Surface, polys: &[&[Vec2]], paint: &Paint) {
         self.edges.clear();
         self.edges.extend(build_edges(polys).iter().copied());
         if self.edges.is_empty() {
             return;
         }
-        let target = surface.rect();
+        let full = surface.rect();
+        let clip = self.clip().and_then(|c| full.intersect(c)).unwrap_or(full);
+        if clip.is_empty() {
+            return;
+        }
         let (w, h) = (surface.width(), surface.height());
         let cov = &mut self.cov;
         let active = &mut self.active;
-        let color = paint.color;
+        let paint = paint.clone();
         rasterize_polys(&self.edges, w, h, cov, active, &mut |row, row_cov| {
-            surface.blend_row(row, row_cov, color);
-            let _ = target;
+            let rf = f64::from(u32::try_from(row).unwrap_or(u32::MAX));
+            if rf < clip.y0 || rf + 1.0 > clip.y1 {
+                return;
+            }
+            let mut masked: Vec<f32> = row_cov.to_vec();
+            for (x, slot) in masked.iter_mut().enumerate() {
+                let xf = f64::from(u32::try_from(x).unwrap_or(u32::MAX));
+                if xf < clip.x0 || xf + 1.0 > clip.x1 {
+                    *slot = 0.0;
+                }
+            }
+            surface.blend_row_with(row, &masked, &mut |x| {
+                paint.eval(f64::from(u32::try_from(x).unwrap_or(0)) + 0.5, rf + 0.5)
+            });
         });
     }
 
-    /// Fill an axis-aligned device-space rect exactly (fast path).
-    pub fn fill_rect(&mut self, surface: &mut Surface, rect: Rect, paint: &Solid) {
-        let Some(clip) = surface.rect().intersect(rect) else {
+    /// Draw an image with nearest-neighbor sampling into `dst` (device
+    /// pixels), respecting the clip. Premultiplied over-compositing.
+    pub fn draw_image(&mut self, surface: &mut Surface, image: &Image, dst: Rect) {
+        let full = surface.rect();
+        let Some(clip) = self
+            .clip()
+            .map(|c| full.intersect(c))
+            .unwrap_or(Some(full))
+            .and_then(|c| c.intersect(dst))
+        else {
             return;
         };
+        if clip.is_empty() || image.width == 0 || image.height == 0 {
+            return;
+        }
+        let y0 = clip.y0.floor().max(0.0) as usize;
+        let y1 = (clip.y1.ceil() as usize).min(surface.height());
+        let x0 = clip.x0.floor().max(0.0) as usize;
+        let x1 = (clip.x1.ceil() as usize).min(surface.width());
+        for row in y0..y1 {
+            let cy = f64::from(u32::try_from(row).unwrap_or(0)) + 0.5;
+            let v = (cy - dst.y0) / dst.height().max(1e-9);
+            for col in x0..x1 {
+                let cx = f64::from(u32::try_from(col).unwrap_or(0)) + 0.5;
+                let u = (cx - dst.x0) / dst.width().max(1e-9);
+                let px = image.sample(u, v);
+                surface.blend_pixel(col, row, px);
+            }
+        }
+    }
+
+    /// Fill an axis-aligned device-space rect exactly (fast path).
+    pub fn fill_rect(&mut self, surface: &mut Surface, rect: Rect, paint: &Paint) {
+        let surface_full = surface.rect();
+        let bounded = match self.clip() {
+            Some(c) => match surface_full.intersect(c).and_then(|x| x.intersect(rect)) {
+                Some(r) => r,
+                None => return,
+            },
+            None => match surface_full.intersect(rect) {
+                Some(r) => r,
+                None => return,
+            },
+        };
+        let clip = bounded;
         let (w, h) = (surface.width(), surface.height());
         let y0 = clip.y0.floor().max(0.0) as usize;
         let y1 = (clip
@@ -145,7 +274,9 @@ impl Painter {
                     *slot = (fx * fy) as f32;
                 }
             }
-            surface.blend_row(row, &self.cov, paint.color);
+            surface.blend_row_with(row, &self.cov, &mut |x| {
+                paint.eval(f64::from(u32::try_from(x).unwrap_or(0)) + 0.5, ry0 + 0.5)
+            });
         }
     }
 }
@@ -249,7 +380,7 @@ mod tests {
             &square_path(4.0, 4.0, 8.0),
             Affine::IDENTITY,
             FillRule::NonZero,
-            &Solid::new([255, 0, 0, 255]),
+            &Paint::from(Solid::new([255, 0, 0, 255])),
         );
         for y in 0..16_usize {
             for x in 0..16_usize {
@@ -277,7 +408,7 @@ mod tests {
             &p,
             Affine::IDENTITY,
             FillRule::NonZero,
-            &Solid::new([255, 255, 255, 255]),
+            &Paint::from(Solid::new([255, 255, 255, 255])),
         );
         let got = sum_alpha(&s) as f64 / 255.0;
         assert!(
@@ -316,7 +447,7 @@ mod tests {
             &[outer, inner],
             Affine::IDENTITY,
             FillRule::NonZero,
-            &Solid::new([255, 255, 255, 255]),
+            &Paint::from(Solid::new([255, 255, 255, 255])),
         );
         assert_eq!(s.pixel(10, 10).unwrap_or([0; 4])[3], 0, "hole empty");
         assert_eq!(s.pixel(2, 2).unwrap_or([0; 4])[3], 255, "ring solid");
@@ -351,7 +482,7 @@ mod tests {
             &[outer, inner],
             Affine::IDENTITY,
             FillRule::EvenOdd,
-            &Solid::new([255, 255, 255, 255]),
+            &Paint::from(Solid::new([255, 255, 255, 255])),
         );
         assert_eq!(s.pixel(10, 10).unwrap_or([0; 4])[3], 0, "hole empty");
         assert_eq!(s.pixel(2, 2).unwrap_or([0; 4])[3], 255, "ring solid");
@@ -366,14 +497,14 @@ mod tests {
         painter.fill_rect(
             &mut s,
             Rect::from_size(Vec2::ZERO, Vec2::new(4.0, 4.0)),
-            &Solid::new([255, 0, 0, 128]),
+            &Paint::from(Solid::new([255, 0, 0, 128])),
         );
         let mid = s.pixel(1, 1).unwrap_or([0; 4]);
         assert_eq!(mid[3], 128);
         painter.fill_rect(
             &mut s,
             Rect::from_size(Vec2::ZERO, Vec2::new(4.0, 4.0)),
-            &Solid::new([255, 0, 0, 128]),
+            &Paint::from(Solid::new([255, 0, 0, 128])),
         );
         let after = s.pixel(1, 1).unwrap_or([0; 4]);
         // 0.5 over 0.5: exact 191.75; integer pipeline rounds to 192.
@@ -388,14 +519,14 @@ mod tests {
         painter.fill_rect(
             &mut a,
             Rect::from_size(Vec2::new(4.0, 4.0), Vec2::new(8.0, 8.0)),
-            &Solid::new([10, 20, 30, 255]),
+            &Paint::from(Solid::new([10, 20, 30, 255])),
         );
         painter.fill_path(
             &mut b,
             &square_path(4.0, 4.0, 8.0),
             Affine::IDENTITY,
             FillRule::NonZero,
-            &Solid::new([10, 20, 30, 255]),
+            &Paint::from(Solid::new([10, 20, 30, 255])),
         );
         assert_eq!(a.data(), b.data(), "rect and path fills identical");
     }
@@ -409,7 +540,7 @@ mod tests {
             &square_path(0.0, 0.0, 8.0),
             Affine::translate(Vec2::new(10.0, 6.0)),
             FillRule::NonZero,
-            &Solid::new([255, 255, 255, 255]),
+            &Paint::from(Solid::new([255, 255, 255, 255])),
         );
         assert_eq!(s.pixel(9, 6).unwrap_or([0; 4])[3], 0);
         assert_eq!(s.pixel(10, 6).unwrap_or([0; 4])[3], 255);
@@ -426,13 +557,161 @@ mod tests {
             &Path::new(),
             Affine::IDENTITY,
             FillRule::NonZero,
-            &Solid::new([255, 0, 0, 255]),
+            &Paint::from(Solid::new([255, 0, 0, 255])),
         );
         painter.fill_rect(
             &mut s,
             Rect::from_size(Vec2::ZERO, Vec2::ZERO),
-            &Solid::new([255, 0, 0, 255]),
+            &Paint::from(Solid::new([255, 0, 0, 255])),
         );
         assert_eq!(sum_alpha(&s), 0);
+    }
+
+    #[test]
+    fn gradient_fill_horizontal_interpolates() {
+        use crate::paint::{ColorStop, LinearGradient};
+        let mut s = surface(24, 8);
+        let mut painter = Painter::default();
+        let paint = Paint::Linear(LinearGradient::new(
+            Vec2::ZERO,
+            Vec2::new(24.0, 0.0),
+            vec![
+                ColorStop {
+                    offset: 0.0,
+                    color: [0, 0, 0, 255],
+                },
+                ColorStop {
+                    offset: 1.0,
+                    color: [240, 0, 0, 255],
+                },
+            ],
+        ));
+        painter.fill_rect(
+            &mut s,
+            Rect::from_size(Vec2::ZERO, Vec2::new(24.0, 8.0)),
+            &paint,
+        );
+        let left = s.pixel(2, 4).unwrap_or([0; 4])[0];
+        let right = s.pixel(21, 4).unwrap_or([0; 4])[0];
+        assert!(left < 40, "left dark: {left}");
+        assert!(right > 200, "right bright: {right}");
+        // Monotone across the row.
+        let mut prev = 0_u8;
+        for x in 0..24 {
+            let v = s.pixel(x, 4).unwrap_or([0; 4])[0];
+            assert!(v >= prev, "non-monotone at {x}: {v} < {prev}");
+            prev = v;
+        }
+    }
+
+    #[test]
+    fn clip_scissor_is_exact() {
+        let mut s = surface(16, 16);
+        let mut painter = Painter::default();
+        painter.push_clip(Rect::from_size(Vec2::new(8.0, 0.0), Vec2::new(8.0, 16.0)));
+        painter.fill_rect(
+            &mut s,
+            Rect::from_size(Vec2::ZERO, Vec2::new(16.0, 16.0)),
+            &Paint::from(Solid::new([255, 255, 255, 255])),
+        );
+        for y in 0..16_usize {
+            for x in 0..16_usize {
+                let a = s.pixel(x, y).unwrap_or([0; 4])[3];
+                let want = if x >= 8 { 255 } else { 0 };
+                assert_eq!(a, want, "pixel ({x},{y})");
+            }
+        }
+        painter.pop_clip();
+        painter.fill_rect(
+            &mut s,
+            Rect::from_size(Vec2::new(0.0, 0.0), Vec2::new(2.0, 2.0)),
+            &Paint::from(Solid::new([255, 255, 255, 255])),
+        );
+        assert_eq!(s.pixel(1, 1).unwrap_or([0; 4])[3], 255, "clip popped");
+    }
+
+    #[test]
+    fn image_blit_identity_scale_and_alpha() {
+        let mut s = surface(8, 8);
+        let mut painter = Painter::default();
+        // 2x2 premultiplied image: opaque red, transparent, half-alpha
+        // blue (premultiplied: b = 255*128/255 = 128), opaque green.
+        let img = Image::new(
+            2,
+            2,
+            vec![
+                255, 0, 0, 255, //
+                0, 0, 0, 0, //
+                0, 0, 128, 128, //
+                0, 255, 0, 255, //
+            ],
+        )
+        .unwrap_or_else(|| Image {
+            width: 1,
+            height: 1,
+            data: vec![0; 4],
+        });
+        // Identity: dst rect exactly 2x2 at (3, 3).
+        painter.draw_image(
+            &mut s,
+            &img,
+            Rect::from_size(Vec2::new(3.0, 3.0), Vec2::new(2.0, 2.0)),
+        );
+        assert_eq!(s.pixel(3, 3).unwrap_or([0; 4]), [255, 0, 0, 255], "red");
+        assert_eq!(s.pixel(4, 3).unwrap_or([0; 4])[3], 0, "transparent");
+        let half = s.pixel(3, 4).unwrap_or([0; 4]);
+        assert_eq!(half[2], 128, "half blue: {}", half[2]);
+        assert_eq!(half[3], 128);
+        assert_eq!(s.pixel(4, 4).unwrap_or([0; 4]), [0, 255, 0, 255], "green");
+    }
+
+    #[test]
+    fn image_blit_nearest_scale() {
+        let mut s = surface(8, 8);
+        let mut painter = Painter::default();
+        // 1x1 opaque white scaled to 2x2.
+        let img = Image::new(1, 1, vec![255, 255, 255, 255]).unwrap_or_else(|| Image {
+            width: 1,
+            height: 1,
+            data: vec![0; 4],
+        });
+        painter.draw_image(
+            &mut s,
+            &img,
+            Rect::from_size(Vec2::new(2.0, 2.0), Vec2::new(2.0, 2.0)),
+        );
+        assert_eq!(s.pixel(2, 2).unwrap_or([0; 4])[3], 255);
+        assert_eq!(s.pixel(3, 3).unwrap_or([0; 4])[3], 255);
+        assert_eq!(s.pixel(4, 4).unwrap_or([0; 4])[3], 0, "outside dst");
+    }
+
+    #[test]
+    fn radial_gradient_fill_center_is_dark() {
+        use crate::paint::{ColorStop, RadialGradient};
+        let mut s = surface(20, 20);
+        let mut painter = Painter::default();
+        let paint = Paint::Radial(RadialGradient::new(
+            Vec2::new(10.0, 10.0),
+            10.0,
+            vec![
+                ColorStop {
+                    offset: 0.0,
+                    color: [0, 0, 0, 255],
+                },
+                ColorStop {
+                    offset: 1.0,
+                    color: [200, 200, 200, 255],
+                },
+            ],
+        ));
+        painter.fill_rect(
+            &mut s,
+            Rect::from_size(Vec2::ZERO, Vec2::new(20.0, 20.0)),
+            &paint,
+        );
+        let center = s.pixel(10, 10).unwrap_or([0; 4])[0];
+        let corner = s.pixel(19, 19).unwrap_or([0; 4])[0];
+        assert!(center < 20, "center dark: {center}");
+        assert!(corner > 140, "corner bright: {corner}");
     }
 }

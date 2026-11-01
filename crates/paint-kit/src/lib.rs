@@ -16,11 +16,13 @@
 //! golden images and any future GPU backend must match it (ADR-0004).
 #![forbid(unsafe_code)]
 
+pub mod paint;
 pub mod painter;
 pub mod raster;
 pub mod surface;
 
-pub use painter::{Painter, Solid};
+pub use paint::{ColorStop, LinearGradient, Paint, RadialGradient};
+pub use painter::{Image, Painter, Solid};
 pub use raster::{Edge, rasterize_polys};
 pub use surface::Surface;
 

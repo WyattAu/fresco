@@ -137,6 +137,44 @@ impl Surface {
     /// Blend a premultiplied color into one row under per-pixel coverage
     /// in `[0, 1]`. Internal to the rasterizer; public for tests.
     pub fn blend_row(&mut self, y: usize, cov: &[f32], color: [u8; 4]) {
+        self.blend_row_with(y, cov, &mut |_| color);
+    }
+
+    /// Composite one premultiplied pixel over the target (full coverage).
+    pub fn blend_pixel(&mut self, x: usize, y: usize, rgba: [u8; 4]) {
+        let base = match y
+            .checked_mul(self.stride)
+            .and_then(|v| v.checked_add(x.checked_mul(4)?))
+        {
+            Some(b) => b,
+            None => return,
+        };
+        let a_eff = u32::from(rgba[3]);
+        if a_eff == 0 {
+            return;
+        }
+        let inv = 255 - a_eff;
+        let Some(chunk) = self.data.get_mut(base..base + 4) else {
+            return;
+        };
+        let mut out = [0_u8; 4];
+        for (k, pair) in chunk.iter().zip(rgba).enumerate() {
+            let (dst, src) = pair;
+            let src_eff = if k == 3 { a_eff } else { u32::from(src) };
+            let v = (src_eff * 255 + u32::from(*dst) * inv + 127) / 255;
+            if let Some(slot) = out.get_mut(k) {
+                *slot = v.min(255) as u8;
+            }
+        }
+        for (slot, v) in chunk.iter_mut().zip(out) {
+            *slot = v;
+        }
+    }
+
+    /// Blend with a per-pixel source (gradients, images). The source
+    /// receives the pixel column and returns a premultiplied color whose
+    /// alpha is already coverage-multiplied.
+    pub fn blend_row_with(&mut self, y: usize, cov: &[f32], src: &mut dyn FnMut(usize) -> [u8; 4]) {
         if y >= self.height || cov.is_empty() {
             return;
         }
@@ -148,6 +186,7 @@ impl Surface {
         };
         for (x, c) in cov.iter().take(cols).enumerate() {
             let cv = f64::from(c.clamp(0.0, 1.0));
+            let color = src(x);
             // Effective source = paint premultiplied color scaled by
             // coverage; its alpha is paint_alpha * coverage.
             let a_eff = (cv * f64::from(color[3])).round() as u32;
@@ -159,21 +198,20 @@ impl Surface {
             let Some(chunk) = row.get_mut(base..base + 4) else {
                 continue;
             };
-            let mut dst = [0_u8; 4];
-            for (d, b) in dst.iter_mut().zip(chunk.iter()) {
-                *d = *b;
+            let mut out = [0_u8; 4];
+            for (k, pair) in chunk.iter().zip(color).enumerate() {
+                let (dst, src) = pair;
+                let src_eff = if k == 3 {
+                    a_eff
+                } else {
+                    (cv * f64::from(src)).round() as u32
+                };
+                let v = (src_eff * 255 + u32::from(*dst) * inv + 127) / 255;
+                if let Some(slot) = out.get_mut(k) {
+                    *slot = v.min(255) as u8;
+                }
             }
-            let src_eff = [
-                (cv * f64::from(color[0])).round() as u32,
-                (cv * f64::from(color[1])).round() as u32,
-                (cv * f64::from(color[2])).round() as u32,
-                a_eff,
-            ];
-            let blended = src_eff.iter().zip(dst).map(|(src, dstv)| {
-                let v = (src * 255 + u32::from(dstv) * inv + 127) / 255;
-                v.min(255) as u8
-            });
-            for (slot, v) in chunk.iter_mut().zip(blended) {
+            for (slot, v) in chunk.iter_mut().zip(out) {
                 *slot = v;
             }
         }

@@ -28,6 +28,15 @@ Consumers gate features (estate ADR-0005): every phase names its consumer
 before code. kestrel-gui is the anchor; ferro-desktop follows only if
 Phase 2 earns it.
 
+## 2b. Progress log
+
+- 2026-11-01: Phase 2.1 window-kit landed (facade + fake backend + winit
+  feature, present via softbuffer). Phase 2.2 text-kit landed (trait,
+  FakeEngine, glyph atlas 887, Parley 0.12 backend behind `parley`).
+  Phase 2.3 raster breadth landed (linear/radial gradients, clip stack,
+  nearest-neighbor image blits). 124 tests green. Phase 2.4 (kestrel
+  alpha) and 2.5 (estate.yml registration) remain.
+
 ## 3. Phases
 
 ### Phase 2: Pixels in a window (0.2 to 0.4) -> kestrel alpha

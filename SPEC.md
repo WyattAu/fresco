@@ -34,6 +34,10 @@ damage-tracked partial redraw as the core performance contract.
   arithmetic, no transcendentals, zero dependencies.
 - L1 (`scene-kit`): std, depends on L0 only. No pixel types.
 - L2 (`paint-kit`): std; depends on L0 only. Owns rasterization.
+- L2 platform (`window-kit`): std; estate traits first (ADR-0003), winit
+  and softbuffer behind the default `winit` feature, never in core.
+- L2 text (`text-kit`): std; zero-dep core, Parley behind the `parley`
+  feature per ADR-0002.
 - L3 (`render-conformance`): dev-only, `publish = false`, may depend on
   anything in the workspace.
 
@@ -82,6 +86,43 @@ A lower layer must never name a higher layer's types.
   beyond the channel delta or the mismatch budget fail with a report; a
   viewable BMP diff is emitted on failure.
   Oracle: `cargo test -p render-conformance`.
+- REQ-W1 (facade): the fake runner delivers scripted events in script
+  order through the sink, with a present path in scope.
+  Oracle: `cargo test -p window-kit fake_runner`.
+- REQ-W2 (DPI): physical = logical * scale, and to_logical inverts it.
+  Oracle: `cargo test -p window-kit fake_window_dpi`.
+- REQ-W3 (present contract): a correctly sized buffer is captured; a
+  mismatched buffer is a SizeMismatch error.
+  Oracle: `cargo test -p window-kit fake_present`.
+- REQ-W4 (frame clock): end without begin is zero duration; statistics
+  accumulate per frame.
+  Oracle: `cargo test -p window-kit frame_clock`.
+- REQ-T1 (deterministic shaping): the fake engine's shape output is a pure
+  function of the query; glyph ids are scalar values, advances are
+  0.6 em.
+  Oracle: `cargo test -p text-kit shape_is_deterministic`.
+- REQ-T2 (wrapping): greedy wrap on spaces keeps every line within the
+  wrap width, trailing spaces trimmed.
+  Oracle: `cargo test -p text-kit layout_wraps`.
+- REQ-T3 (atlas placement): shelf packing places glyphs without overlap,
+  round-trips coverage bytes, and serves repeat lookups from the same
+  rect.
+  Oracle: `cargo test -p text-kit atlas`.
+- REQ-T4 (atlas eviction): a full atlas evicts least-recently-used glyphs
+  and accepts new placements afterwards.
+  Oracle: `cargo test -p text-kit atlas_lru_eviction`.
+- REQ-G1 (linear gradient): stop interpolation is premultiplied lerp with
+  clamped t; projection uses only the axis component.
+  Oracle: `cargo test -p paint-kit gradient`.
+- REQ-G2 (radial gradient): t is euclidean distance over radius; zero
+  radius clamps to the first stop.
+  Oracle: `cargo test -p paint-kit radial_gradient`.
+- REQ-G3 (clip): pushed clips are intersecting scissors over fills and
+  images; pop restores.
+  Oracle: `cargo test -p paint-kit clip_scissor`.
+- REQ-I1 (images): nearest-neighbor sampling; premultiplied over
+  compositing per pixel.
+  Oracle: `cargo test -p paint-kit image_blit`.
 
 ## 5. Coverage tier
 

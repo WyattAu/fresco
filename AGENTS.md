@@ -46,7 +46,9 @@ above 80 percent per published crate.
 
 ## Layout
 
-- `crates/` one crate per directory, workspace members.
+- `crates/` one crate per directory, workspace members. New in 0.2.0:
+  `window-kit` (winit behind default feature), `text-kit` (parley behind
+  default-off feature).
 - `docs/adr/` decisions; `docs/paradigms.md` paradigm index (651 to 1050).
 - `SPEC.md` requirements and truth table. `REQUIREMENTS.md` traceability.
 

@@ -1,25 +1,21 @@
 # CHANGELOG
 
+## 0.2.0 (2026-11-01)
+
+Phase 2 of the UI-engine plan (pixels in a window).
+
+- `window-kit` (new): estate windowing facade per ADR-0003. `Window`,
+  `Present`, `EventSink`, `FrameClock` traits; headless fake backend with
+  scripted events and captured presents; winit 0.30 backend behind the
+  default `winit` feature with softbuffer software present (premultiplied
+  RGBA8 in, opaque XRGB out).
+- `text-kit` (new): the ADR-0002 `TextEngine` trait (shape + layout),
+  deterministic FakeEngine (0.6 em monospace model, greedy space wrap),
+  shelf-packed A8 glyph atlas with LRU eviction (887), Parley 0.12
+  backend behind the default-off `parley` feature.
+- `paint-kit`: gradients (linear, radial; premultiplied lerp, device-space
+  v0), clip stack (intersecting scissors), nearest-neighbor image blits,
+  per-pixel-source row blending. Painter APIs now take `Paint`.
+- Workspace: version 0.2.0; layering extended (L2 platform, L2 text).
+
 ## 0.1.0 (2026-11-01)
-
-Initial release. Phase 1 of the estate UI-engine plan.
-
-- `path-kit`: 2D geometry L0, no_std + alloc. Beziers, adaptive flattening
-  with tolerance, Legendre-Gauss arc length, polyline stroking with joins
-  and caps, dashing, robust adaptive orientation predicate, winding-number
-  hit testing.
-- `anim-kit`: L0 animation. Closed-form damped spring (under, critical,
-  over), settle-time bound, easing functions. No alloc, no deps.
-- `paint-kit`: L2 CPU raster. Exact-coverage scanline fill via winding
-  integral, premultiplied RGBA8 surfaces, solid fills, NonZero and EvenOdd
-  (parity reduction), rect fast path.
-- `scene-kit`: L1 retained scene. Generational arena, tree, damage
-  rectangles, frame plans (full or regions), sorted DrawList flattening.
-- `layout-kit`: L1 layout. Memoized incremental measure cache with
-  generation invalidation, single-axis flex solver (grow/shrink/gap/clamp).
-- `render-conformance`: L3 dev harness, publish = false. Golden-image
-  compare with budget and channel delta, BMP diff output, FNV-1a hashing.
-
-Decisions recorded: ADR-0001 (retained scene + damage), ADR-0002 (text via
-trait, rustybuzz/parley first), ADR-0003 (winit-first windowing facade),
-ADR-0004 (CPU reference paint, Vello GPU parity).
