@@ -20,6 +20,7 @@ damage-tracked partial redraw as the core performance contract.
 | Coverage tier and CI gates | `.github/workflows/ci.yml` (tier B, 80 percent) |
 | Rendered-output correctness | `render-conformance` tests; golden images in `crates/render-conformance/tests/` |
 | Publication status | `Cargo.toml` per crate; `render-conformance` is `publish = false` |
+| Competitive position vs Qt/ImGui/egui/iced/Slint | `docs/competitive-analysis.md` (audited 2026-11-01) |
 
 ## 3. Layering (normative)
 
