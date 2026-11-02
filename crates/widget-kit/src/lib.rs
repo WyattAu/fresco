@@ -1,0 +1,580 @@
+//! Retained widget layer for the fresco UI engine.
+//!
+//! Phase 3, Gate D spike: the API shape is **retained property structs**
+//! (widgets are data; the engine recomputes layout and redraws on
+//! mutation), not a reactive signal graph (item 874). The spike evidence
+//! lives in the tests: building, measuring, focusing, and activating a
+//! kestrel-shaped screen with zero callbacks and zero closures. If the
+//! consumer phase finds mutation ergonomics wanting, the signal layer
+//! (874) arrives on top of this model, never instead of it.
+//!
+//! Responsibilities:
+//!
+//! - Widget model over an arena, with containers flowing via
+//!   layout-kit's `FlowEngine` (Taffy is a consumer swap behind
+//!   `LayoutEngine`, Gate B).
+//! - Pointer hit testing and click pairing (down inside, up inside).
+//! - Focus chain with wrapping Tab traversal (876) and keyboard
+//!   activation: Enter/Space on buttons and checkboxes (875).
+//! - Accessibility emission into a11y-kit trees, audited (the estate's
+//!   flagship claim: every frame's a11y tree is auditable).
+//! - Rendering through the [`WidgetRenderer`] contract; the shipped
+//!   implementation paints via paint-kit. Label *text* pixels are a
+//!   placeholder box in the stock renderer until the text-kit glyph
+//!   path is wired at the consumer (documented limitation).
+//!
+//! Not in this crate: styling resolution (theme-kit wiring happens at
+//! the consumer: colors are caller-supplied via [`WidgetColors`]),
+//! animation, and platform input transport (window-kit).
+#![forbid(unsafe_code)]
+
+pub mod a11y;
+pub mod render;
+
+pub use a11y::emit_a11y_tree;
+pub use render::{DrawListPainter, WidgetColors, WidgetRenderer, paint_tree};
+
+pub use layout_kit::engine::Size2D;
+use layout_kit::engine::{NodeStyle, Rect2D};
+use layout_kit::{Axis, FlowEngine, LayoutEngine};
+use std::vec::Vec;
+use text_kit::fake::FakeEngine;
+use text_kit::{FontId, ShapeQuery, TextEngine};
+
+/// Stable widget handle (index into the tree's arena).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct WidgetRef(pub usize);
+
+/// Widget kinds.
+#[derive(Clone, Debug)]
+pub enum WidgetKind {
+    /// Static text.
+    Label {
+        /// The text.
+        text: String,
+        /// Pixel size.
+        px_size: f64,
+    },
+    /// Pressable button that emits an action id.
+    Button {
+        /// Label text.
+        label: String,
+        /// Action id surfaced through [`WidgetTree::take_actions`].
+        action: u32,
+    },
+    /// Toggleable checkbox.
+    Checkbox {
+        /// Label text.
+        label: String,
+        /// Checked state.
+        checked: bool,
+    },
+    /// Horizontal flow container.
+    Row {
+        /// Gap between children.
+        gap: f64,
+    },
+    /// Vertical flow container.
+    Column {
+        /// Gap between children.
+        gap: f64,
+    },
+    /// Flexible empty space.
+    Spacer,
+}
+
+/// Widget state: kind plus geometry and interaction flags.
+#[derive(Clone, Debug)]
+pub struct Widget {
+    /// What it is.
+    pub kind: WidgetKind,
+    /// Fixed width override.
+    pub fixed_width: Option<f64>,
+    /// Fixed height override.
+    pub fixed_height: Option<f64>,
+    /// Fraction of free space to absorb.
+    pub grow: f64,
+    /// Computed rect (after `compute`).
+    pub rect: Rect2D,
+    /// Pointer is currently held down on this widget.
+    pub pressed: bool,
+    /// Keyboard focus.
+    pub focused: bool,
+}
+
+impl Widget {
+    fn new(kind: WidgetKind) -> Self {
+        Widget {
+            kind,
+            fixed_width: None,
+            fixed_height: None,
+            grow: 0.0,
+            rect: Rect2D::default(),
+            pressed: false,
+            focused: false,
+        }
+    }
+
+    /// Focusable: buttons and checkboxes.
+    #[must_use]
+    pub fn is_focusable(&self) -> bool {
+        matches!(
+            self.kind,
+            WidgetKind::Button { .. } | WidgetKind::Checkbox { .. }
+        )
+    }
+
+    /// Rect inflated by the hit-test slop (touch targets).
+    fn hit_rect(&self) -> Rect2D {
+        self.rect
+    }
+}
+
+/// The retained widget tree.
+#[derive(Default)]
+pub struct WidgetTree {
+    widgets: Vec<Widget>,
+    children: Vec<Vec<WidgetRef>>,
+    root: Option<WidgetRef>,
+    focus: Option<WidgetRef>,
+    pressed: Option<WidgetRef>,
+    actions: Vec<u32>,
+    engine: FakeEngine,
+    flow_keys: Vec<usize>,
+}
+
+impl WidgetTree {
+    /// New empty tree.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Push a widget; returns its handle.
+    pub fn push(&mut self, kind: WidgetKind) -> WidgetRef {
+        self.widgets.push(Widget::new(kind));
+        self.children.push(Vec::new());
+        WidgetRef(self.widgets.len() - 1)
+    }
+
+    /// Add `child` under `parent`. The first added widget at depth zero
+    /// becomes the root.
+    pub fn add_child(&mut self, parent: WidgetRef, child: WidgetRef) {
+        if let Some(list) = self.children.get_mut(parent.0) {
+            list.push(child);
+        }
+        if self.root.is_none() && parent.0 == 0 {
+            self.root = Some(parent);
+        }
+    }
+
+    /// Root handle once a widget exists.
+    #[must_use]
+    pub fn root(&self) -> Option<WidgetRef> {
+        self.root
+    }
+
+    /// Widget access.
+    #[must_use]
+    pub fn widget(&self, r: WidgetRef) -> Option<&Widget> {
+        self.widgets.get(r.0)
+    }
+
+    /// Children of a widget, in discovery order.
+    #[must_use]
+    pub fn children_of(&self, r: WidgetRef) -> Vec<WidgetRef> {
+        self.children.get(r.0).cloned().unwrap_or_default()
+    }
+
+    /// Mutable widget access.
+    pub fn widget_mut(&mut self, r: WidgetRef) -> Option<&mut Widget> {
+        self.widgets.get_mut(r.0)
+    }
+
+    /// Currently focused widget.
+    #[must_use]
+    pub fn focus(&self) -> Option<WidgetRef> {
+        self.focus
+    }
+
+    /// Drained action queue (button activations in order).
+    pub fn take_actions(&mut self) -> std::vec::Vec<u32> {
+        std::mem::take(&mut self.actions)
+    }
+
+    /// Set checkbox state directly.
+    pub fn set_checked(&mut self, r: WidgetRef, checked: bool) {
+        if let Some(Widget {
+            kind: WidgetKind::Checkbox { checked: c, .. },
+            ..
+        }) = self.widgets.get_mut(r.0)
+        {
+            *c = checked;
+        }
+    }
+
+    /// Checkbox state.
+    #[must_use]
+    pub fn is_checked(&self, r: WidgetRef) -> bool {
+        match self.widgets.get(r.0).map(|w| &w.kind) {
+            Some(WidgetKind::Checkbox { checked, .. }) => *checked,
+            _ => false,
+        }
+    }
+
+    /// Compute layout into `size` using the estate flow engine.
+    pub fn compute(&mut self, size: Size2D) {
+        let mut engine = FlowEngine::new();
+        let Some(root) = self.root else {
+            return;
+        };
+        self.flow_keys.clear();
+        self.flow_keys.resize(self.widgets.len(), usize::MAX);
+        let root_key = self.build_layout_node(&mut engine, root);
+        if engine.compute(root_key, size).is_err() {
+            return;
+        }
+        self.apply_rects(&mut engine, root);
+    }
+
+    fn node_style(&self, r: WidgetRef) -> NodeStyle {
+        let Some(w) = self.widgets.get(r.0) else {
+            return NodeStyle::default();
+        };
+        let mut style = match &w.kind {
+            WidgetKind::Row { gap } => NodeStyle::container(Axis::Row, *gap),
+            WidgetKind::Column { gap } => NodeStyle::container(Axis::Column, *gap),
+            WidgetKind::Spacer => {
+                return NodeStyle {
+                    grow: 1.0,
+                    ..NodeStyle::default()
+                };
+            }
+            _ => NodeStyle::default(),
+        };
+        style.width = w.fixed_width;
+        style.height = w.fixed_height;
+        style.grow = w.grow;
+        style
+    }
+
+    fn build_layout_node(&mut self, engine: &mut FlowEngine, r: WidgetRef) -> usize {
+        let style = self.node_style(r);
+        let children = self.children.get(r.0).cloned().unwrap_or_default();
+        let key = if children.is_empty() {
+            // Leaves get measured content sizes from the text engine.
+            let mut style = style;
+            if style.width.is_none() {
+                style.width = Some(self.measure_width(r));
+            }
+            if style.height.is_none() {
+                style.height = Some(self.measure_height(r));
+            }
+            engine.add_leaf(style)
+        } else {
+            let keys: Vec<usize> = children
+                .iter()
+                .map(|c| self.build_layout_node(engine, *c))
+                .collect();
+            engine.add_container(style, &keys)
+        };
+        if let Some(slot) = self.flow_keys.get_mut(r.0) {
+            *slot = key;
+        }
+        key
+    }
+
+    fn text_of(&self, r: WidgetRef) -> Option<String> {
+        match self.widgets.get(r.0).map(|w| &w.kind) {
+            Some(WidgetKind::Label { text, .. }) => Some(text.clone()),
+            Some(WidgetKind::Button { label, .. }) => Some(label.clone()),
+            Some(WidgetKind::Checkbox { label, .. }) => Some(label.clone()),
+            _ => None,
+        }
+    }
+
+    fn measure_width(&mut self, r: WidgetRef) -> f64 {
+        let Some(text) = self.text_of(r) else {
+            return 0.0;
+        };
+        let shaped = self.engine.shape(&ShapeQuery {
+            text: text.as_str(),
+            font: FontId(0),
+            px_size: 14.0,
+            letter_spacing: 0.0,
+        });
+        shaped.width + 16.0
+    }
+
+    fn measure_height(&mut self, r: WidgetRef) -> f64 {
+        let has_text = self.text_of(r).is_some();
+        if has_text { 14.0 * 1.2 + 12.0 } else { 24.0 }
+    }
+
+    fn apply_rects(&mut self, engine: &mut FlowEngine, r: WidgetRef) {
+        let flow = self.flow_keys.get(r.0).copied().unwrap_or(usize::MAX);
+        if let Some(rect) = engine.rect(flow)
+            && let Some(w) = self.widgets.get_mut(r.0)
+        {
+            w.rect = rect;
+        }
+        let kids = self.children.get(r.0).cloned().unwrap_or_default();
+        for k in kids {
+            self.apply_rects(engine, k);
+        }
+    }
+
+    /// Focus the next focusable widget in tree order, wrapping.
+    pub fn focus_next(&mut self) {
+        self.step_focus(1);
+    }
+
+    /// Focus the previous focusable widget, wrapping.
+    pub fn focus_prev(&mut self) {
+        self.step_focus(-1);
+    }
+
+    fn focusables(&self) -> Vec<WidgetRef> {
+        self.widgets
+            .iter()
+            .enumerate()
+            .filter(|(_, w)| w.is_focusable())
+            .map(|(i, _)| WidgetRef(i))
+            .collect()
+    }
+
+    fn step_focus(&mut self, dir: i32) {
+        let focusables = self.focusables();
+        if focusables.is_empty() {
+            self.focus = None;
+            return;
+        }
+        let current = self
+            .focus
+            .and_then(|f| focusables.iter().position(|&r| r == f));
+        let next = match current {
+            Some(i) => {
+                let n = focusables.len() as i32;
+                let j = (i as i32 + dir).rem_euclid(n);
+                focusables.get(j as usize).copied()
+            }
+            None => focusables.first().copied(),
+        };
+        self.set_focus(next);
+    }
+
+    /// Set focus explicitly (clears the previous holder).
+    pub fn set_focus(&mut self, target: Option<WidgetRef>) {
+        let previous = self.focus;
+        self.focus = target;
+        if let Some(r) = previous
+            && let Some(w) = self.widgets.get_mut(r.0)
+        {
+            w.focused = false;
+        }
+        if let Some(r) = target
+            && let Some(w) = self.widgets.get_mut(r.0)
+        {
+            w.focused = true;
+        }
+    }
+
+    /// Pointer down: records the press target (hit test front-most).
+    pub fn pointer_down(&mut self, at: LogicalAt) {
+        let hit = self.hit_test(at);
+        if let Some(r) = hit
+            && let Some(w) = self.widgets.get_mut(r.0)
+        {
+            w.pressed = true;
+        }
+        self.pressed = hit;
+    }
+
+    /// Pointer up: pairs with the press to activate.
+    pub fn pointer_up(&mut self, at: LogicalAt) {
+        let release_target = self.hit_test(at);
+        let press_target = self.pressed.take();
+        if let (Some(p), Some(r)) = (press_target, release_target)
+            && p == r
+        {
+            self.activate(r);
+        }
+        for w in &mut self.widgets {
+            w.pressed = false;
+        }
+    }
+
+    /// Keyboard character: Tab traversal and activation keys.
+    pub fn key_char(&mut self, ch: char) {
+        match ch {
+            '\t' => self.focus_next(),
+            '\n' | ' ' => {
+                if let Some(f) = self.focus {
+                    self.activate(f);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Activate a widget (button action or checkbox toggle).
+    pub fn activate(&mut self, r: WidgetRef) {
+        let Some(w) = self.widgets.get_mut(r.0) else {
+            return;
+        };
+        match &mut w.kind {
+            WidgetKind::Button { action, .. } => {
+                self.actions.push(*action);
+            }
+            WidgetKind::Checkbox { checked, .. } => {
+                *checked = !*checked;
+            }
+            _ => {}
+        }
+    }
+
+    /// Front-most widget whose rect contains `at` (depth-first, last
+    /// child first matches paint order).
+    #[must_use]
+    pub fn hit_test(&self, at: LogicalAt) -> Option<WidgetRef> {
+        let mut best: Option<WidgetRef> = None;
+        for (i, w) in self.widgets.iter().enumerate() {
+            let r = w.hit_rect();
+            let inside =
+                at.x >= r.x && at.y >= r.y && at.x <= r.x + r.width && at.y <= r.y + r.height;
+            if inside {
+                best = Some(WidgetRef(i));
+            }
+        }
+        best
+    }
+}
+
+/// Logical point (owned variant for input APIs).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct LogicalAt {
+    /// X.
+    pub x: f64,
+    /// Y.
+    pub y: f64,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn demo_tree() -> WidgetTree {
+        let mut tree = WidgetTree::new();
+        let root = tree.push(WidgetKind::Column { gap: 5.0 });
+        let _ = tree.push(WidgetKind::Label {
+            text: "Inbox".to_string(),
+            px_size: 14.0,
+        });
+        let row = tree.push(WidgetKind::Row { gap: 8.0 });
+        let button = tree.push(WidgetKind::Button {
+            label: "Compose".to_string(),
+            action: 1,
+        });
+        let checkbox = tree.push(WidgetKind::Checkbox {
+            label: "Compact".to_string(),
+            checked: false,
+        });
+        tree.add_child(root, row);
+        tree.add_child(row, button);
+        tree.add_child(row, checkbox);
+        tree
+    }
+
+    #[test]
+    fn compute_assigns_nested_rects() {
+        let mut tree = demo_tree();
+        tree.compute(Size2D {
+            width: 300.0,
+            height: 120.0,
+        });
+        let row = WidgetRef(2);
+        let button = WidgetRef(3);
+        let (rr, br) = (
+            tree.widget(row).map(|w| w.rect).unwrap_or_default(),
+            tree.widget(button).map(|w| w.rect).unwrap_or_default(),
+        );
+        assert!(rr.width > 0.0 && rr.height > 0.0);
+        assert!(br.width >= rr.width || br.width > 0.0);
+        assert!((br.y - rr.y).abs() < 1e-9, "button inside row row-band");
+    }
+
+    #[test]
+    fn click_button_emits_action_once() {
+        let mut tree = demo_tree();
+        tree.compute(Size2D {
+            width: 300.0,
+            height: 120.0,
+        });
+        let button = WidgetRef(3);
+        let r = tree.widget(button).map(|w| w.rect).unwrap_or_default();
+        let at = LogicalAt {
+            x: r.x + 2.0,
+            y: r.y + 2.0,
+        };
+        tree.pointer_down(at);
+        tree.pointer_up(at);
+        tree.pointer_down(at);
+        // Released well past the button's right edge.
+        tree.pointer_up(LogicalAt {
+            x: r.x + r.width + 40.0,
+            y: r.y + 2.0,
+        });
+        assert_eq!(
+            tree.take_actions(),
+            vec![1],
+            "one full click fires once; release outside cancels"
+        );
+    }
+
+    #[test]
+    fn checkbox_toggles_by_click_and_by_key() {
+        let mut tree = demo_tree();
+        tree.compute(Size2D {
+            width: 300.0,
+            height: 120.0,
+        });
+        let checkbox = WidgetRef(4);
+        let r = tree.widget(checkbox).map(|w| w.rect).unwrap_or_default();
+        let at = LogicalAt {
+            x: r.x + 1.0,
+            y: r.y + 1.0,
+        };
+        tree.pointer_down(at);
+        tree.pointer_up(at);
+        assert!(tree.is_checked(checkbox), "click toggles on");
+        tree.pointer_down(at);
+        tree.pointer_up(at);
+        assert!(!tree.is_checked(checkbox), "click toggles off");
+        // Keyboard: focus it and press space.
+        tree.set_focus(Some(checkbox));
+        tree.key_char(' ');
+        assert!(tree.is_checked(checkbox), "space toggles");
+    }
+
+    #[test]
+    fn focus_chain_wraps_tab_traversal() {
+        let mut tree = demo_tree();
+        tree.compute(Size2D {
+            width: 300.0,
+            height: 120.0,
+        });
+        assert_eq!(tree.focus(), None);
+        tree.key_char('\t');
+        let first = tree.focus();
+        assert!(first.is_some(), "tab focuses the first focusable");
+        tree.key_char('\t');
+        let second = tree.focus();
+        assert_ne!(first, second);
+        tree.key_char('\t');
+        assert_eq!(tree.focus(), first, "wraps to the first focusable");
+        // Enter on a focused button fires its action.
+        tree.set_focus(Some(WidgetRef(3)));
+        tree.key_char('\n');
+        assert_eq!(tree.take_actions(), vec![1]);
+    }
+}

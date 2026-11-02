@@ -18,7 +18,16 @@
 extern crate alloc;
 
 pub mod cache;
+pub mod engine;
 pub mod flex;
+pub mod flow;
 
 pub use cache::MeasureCache;
+pub use engine::{LayoutEngine, LayoutError, NodeStyle, Rect2D, Size2D};
 pub use flex::{Axis, FlexItem, solve_flex};
+pub use flow::FlowEngine;
+
+#[cfg(feature = "taffy")]
+pub mod taffy_backend;
+#[cfg(feature = "taffy")]
+pub use taffy_backend::TaffyEngine;

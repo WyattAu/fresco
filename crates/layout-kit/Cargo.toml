@@ -10,7 +10,11 @@ keywords = ["layout", "flexbox", "ui", "incremental"]
 categories = ["graphics", "no-std"]
 exclude = ["/target"]
 
+[features]
+taffy = ["dep:taffy"]
+
 [dependencies]
+taffy = { version = "0.7", optional = true, default-features = false, features = ["std", "taffy_tree", "flexbox"] }
 
 [lints.rust]
 missing_docs = "deny"

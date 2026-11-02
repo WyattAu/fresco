@@ -21,7 +21,9 @@ them. Rule: no row may stay "applied" if the code stops doing it.
 | 879 | Virtualized scroll via O(1) interval overlap | reserved: `layout-kit` viewport query API slot |
 | 852 | DirectComposition virtual-surface tiles = damage regions | `scene-kit` `FramePlan::Regions` is the tile source of truth on Windows |
 | 858 | Per-monitor-v2 DPI as continuous affine transform | `scene-kit` root `Affine`; logical coords are scene-invariant |
-| 876 | Focus as affine/linear-token state | reserved: widget-kit focus chain (compile-time single-owner) |
+| 876 | Focus as affine/linear-token state | `widget-kit` wrapping focus chain, single owner (applied 0.3.0) |
+| 875 | Type-safe FSM navigation routers | `widget-kit` activation model (actions as typed ids); full FSM routers reserved for widget-kit 0.4 |
+| 874 | Retained reactive signal graphs | Gate D: retained-props spike shipped 0.3.0; signals deferred pending kestrel ergonomics evidence |
 | 887 | Glyph atlas shelf packing with LRU | `text-kit` `GlyphAtlas` (applied 0.2.0) |
 | 956/958/990 | Fractional/per-monitor DPI as continuous scale | `window-kit` scale facade + root affine plan (applied at facade level) |
 | 959/992/1017/1032 | Platform frame-clock pacing | `window-kit` `FrameClock`/`Ticker` measurement contract; native clocks are backend upgrades |
