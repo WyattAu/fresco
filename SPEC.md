@@ -38,6 +38,8 @@ damage-tracked partial redraw as the core performance contract.
   and softbuffer behind the default `winit` feature, never in core.
 - L2 text (`text-kit`): std; zero-dep core, Parley behind the `parley`
   feature per ADR-0002.
+- L3 controls (`widget-kit`): std; internal deps only (layout-kit,
+  paint-kit, text-kit, a11y-kit via git). Emits audited a11y trees.
 - L3 (`render-conformance`): dev-only, `publish = false`, may depend on
   anything in the workspace.
 
@@ -123,6 +125,26 @@ A lower layer must never name a higher layer's types.
 - REQ-I1 (images): nearest-neighbor sampling; premultiplied over
   compositing per pixel.
   Oracle: `cargo test -p paint-kit image_blit`.
+- REQ-L3 (engine contract): layout engines implement one trait; the estate
+  flow engine is the dependency-free reference, Taffy (feature `taffy`)
+  the flexbox/grid backend (Gate B).
+  Oracle: `cargo test -p layout-kit`.
+- REQ-K1 (widget model): retained widgets compose rows and columns; a
+  kestrel-shaped screen computes nested rects.
+  Oracle: `cargo test -p widget-kit compute_assigns_nested_rects`.
+- REQ-K2 (input): paired press/release inside a widget activates once;
+  release outside cancels.
+  Oracle: `cargo test -p widget-kit click_button`.
+- REQ-K3 (focus): wrapping Tab traversal over focusable widgets; Enter and
+  Space activate the focused widget.
+  Oracle: `cargo test -p widget-kit focus_chain`.
+- REQ-K4 (a11y): every widget emits an audited a11y-kit node with correct
+  roles, tri-state checkbox values, and single focus; the root is the
+  a11y Window.
+  Oracle: `cargo test -p widget-kit --test a11y_render a11y_tree_has_roles`.
+- REQ-K5 (render): the stock renderer covers every widget kind with
+  opaque pixels (paint-kit path).
+  Oracle: `cargo test -p widget-kit --test a11y_render paint_tree`.
 
 ## 5. Coverage tier
 

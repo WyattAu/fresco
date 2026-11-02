@@ -3,6 +3,14 @@
 version = 4
 
 [[package]]
+name = "a11y-kit"
+version = "0.2.1"
+source = "git+https://github.com/WyattAu/a11y-kit#7b28702da2ea039aee74d41d7f3fa3da15fbdae4"
+dependencies = [
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "ab_glyph"
 version = "0.2.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -73,7 +81,7 @@ checksum = "4b46cbb362ab8752921c97e041f5e366ee6297bd428a31275b9fcf1e380f7299"
 
 [[package]]
 name = "anim-kit"
-version = "0.2.0"
+version = "0.3.0"
 
 [[package]]
 name = "anstyle"
@@ -652,6 +660,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "grid"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "36119f3a540b086b4e436bb2b588cf98a68863470e0e880f4d0842f112a3183a"
+
+[[package]]
 name = "half"
 version = "2.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -924,7 +938,10 @@ dependencies = [
 
 [[package]]
 name = "layout-kit"
-version = "0.2.0"
+version = "0.3.0"
+dependencies = [
+ "taffy",
+]
 
 [[package]]
 name = "libc"
@@ -1369,7 +1386,7 @@ dependencies = [
 
 [[package]]
 name = "paint-kit"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "path-kit",
 ]
@@ -1432,7 +1449,7 @@ dependencies = [
 
 [[package]]
 name = "path-kit"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "criterion",
 ]
@@ -1677,7 +1694,7 @@ checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
 name = "render-conformance"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "paint-kit",
  "path-kit",
@@ -1735,7 +1752,7 @@ dependencies = [
 
 [[package]]
 name = "scene-kit"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "path-kit",
 ]
@@ -1845,6 +1862,15 @@ name = "slab"
 version = "0.4.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
+
+[[package]]
+name = "slotmap"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bdd58c3c93c3d278ca835519292445cb4b0d4dc59ccfdf7ceadaab3f8aeb4038"
+dependencies = [
+ "version_check",
+]
 
 [[package]]
 name = "smallvec"
@@ -1964,8 +1990,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "taffy"
+version = "0.7.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ab4f4d046dd956a47a7e1a2947083d7ac3e6aa3cfaaead36173ceaa5ab11878c"
+dependencies = [
+ "arrayvec",
+ "grid",
+ "serde",
+ "slotmap",
+]
+
+[[package]]
 name = "text-kit"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "parley",
 ]
@@ -2367,6 +2405,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "widget-kit"
+version = "0.3.0"
+dependencies = [
+ "a11y-kit",
+ "layout-kit",
+ "paint-kit",
+ "text-kit",
+]
+
+[[package]]
 name = "winapi-util"
 version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2377,7 +2425,7 @@ dependencies = [
 
 [[package]]
 name = "window-kit"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "softbuffer",
  "winit",

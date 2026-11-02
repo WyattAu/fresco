@@ -72,7 +72,15 @@ Traceability for the fresco engine. REQ identifiers match `SPEC.md` section
 - REQ-G3 clip stack as intersecting scissors.
 - REQ-I1 nearest-neighbor image blits with premultiplied compositing.
 
-## R10 Process
+## R10 Widgets (widget-kit)
+
+- REQ-K1 retained model, nested container layout.
+- REQ-K2 click pairing (down inside + up inside = one activation).
+- REQ-K3 wrapping focus chain; Enter/Space activation.
+- REQ-K4 a11y emission with roles, tri-state, focus; audit clean.
+- REQ-K5 stock renderer paints every kind.
+
+## R11 Process
 
 - Tier B coverage (80 percent) per published crate.
 - `render-conformance` publish = false.

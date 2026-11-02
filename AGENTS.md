@@ -48,7 +48,8 @@ above 80 percent per published crate.
 
 - `crates/` one crate per directory, workspace members. New in 0.2.0:
   `window-kit` (winit behind default feature), `text-kit` (parley behind
-  default-off feature).
+  default-off feature). New in 0.3.0: `widget-kit` (a11y-kit via git dep),
+  layout-kit gains the `taffy` feature (default off).
 - `docs/adr/` decisions; `docs/paradigms.md` paradigm index (651 to 1050).
 - `SPEC.md` requirements and truth table. `REQUIREMENTS.md` traceability.
 

@@ -1,21 +1,21 @@
 # CHANGELOG
 
+## 0.3.0 (2026-11-01)
+
+Phase 3 scaffolding (controls).
+
+- `layout-kit` v2: the `LayoutEngine` contract (`NodeStyle` subset, add
+  leaf/container, compute, read rects). New estate flow engine: rows and
+  columns with gaps, grow distribution through the flex solver, recursive
+  main/cross content sizing. Taffy 0.9 backend behind the default-off
+  `taffy` feature (Gate B: adoption measured on kestrel screens).
+- `widget-kit` (new): retained widget model (Label, Button, Checkbox,
+  Row, Column, Spacer), pointer hit testing with click pairing,
+  wrapping Tab focus chain (876), Enter/Space activation (875),
+  a11y-kit tree emission with clean audits and tri-state checkbox
+  values, `WidgetRenderer` contract plus a paint-kit stock renderer
+  (label text pixels are a placeholder box until the consumer wires the
+  text-kit glyph path). Gate D spike: retained-props API shape.
+- Workspace: version 0.3.0; layering extended (L3 controls).
+
 ## 0.2.0 (2026-11-01)
-
-Phase 2 of the UI-engine plan (pixels in a window).
-
-- `window-kit` (new): estate windowing facade per ADR-0003. `Window`,
-  `Present`, `EventSink`, `FrameClock` traits; headless fake backend with
-  scripted events and captured presents; winit 0.30 backend behind the
-  default `winit` feature with softbuffer software present (premultiplied
-  RGBA8 in, opaque XRGB out).
-- `text-kit` (new): the ADR-0002 `TextEngine` trait (shape + layout),
-  deterministic FakeEngine (0.6 em monospace model, greedy space wrap),
-  shelf-packed A8 glyph atlas with LRU eviction (887), Parley 0.12
-  backend behind the default-off `parley` feature.
-- `paint-kit`: gradients (linear, radial; premultiplied lerp, device-space
-  v0), clip stack (intersecting scissors), nearest-neighbor image blits,
-  per-pixel-source row blending. Painter APIs now take `Paint`.
-- Workspace: version 0.2.0; layering extended (L2 platform, L2 text).
-
-## 0.1.0 (2026-11-01)
