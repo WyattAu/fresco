@@ -42,7 +42,14 @@ above 80 percent per published crate.
    conclusions (estate DOC-STYLE).
 8. `render-conformance` is `publish = false`. Never remove that.
 9. Names: crates keep the `-kit` suffix; no new top-level names without an
-   ADR.
+   ADR. On crates.io the bare names collide with third parties
+   (`path-kit` is owned by songhuaixu) — publish as `fresco-<name>`
+   (package rename; keep the `-kit` lib names).
+10. The estate manifest (`engineering-standards/estate.yml`) records
+   `crates:` as packages **published on crates.io** — `estate-audit.py`
+   errors while an entry 404s. Add a crate to that list in the same
+   commit as its publish; while unpublished, keep it in this file's
+   Layout section only.
 
 ## Layout
 
