@@ -1,5 +1,5 @@
 [package]
-name = "text-kit"
+name = "fresco-text-kit"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -26,3 +26,6 @@ unwrap_used = "deny"
 expect_used = "deny"
 panic = "deny"
 indexing_slicing = "deny"
+
+[lib]
+name = "text_kit"

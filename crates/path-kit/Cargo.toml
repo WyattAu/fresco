@@ -1,5 +1,5 @@
 [package]
-name = "path-kit"
+name = "fresco-path-kit"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -29,3 +29,6 @@ expect_used = "deny"
 panic = "deny"
 indexing_slicing = "deny"
 undocumented_unsafe_blocks = "deny"
+
+[lib]
+name = "path_kit"

@@ -1,5 +1,5 @@
 [package]
-name = "window-kit"
+name = "fresco-window-kit"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -29,3 +29,6 @@ unwrap_used = "deny"
 expect_used = "deny"
 panic = "deny"
 indexing_slicing = "deny"
+
+[lib]
+name = "window_kit"

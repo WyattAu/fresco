@@ -20,13 +20,13 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/WyattAu/fresco"
 
 [workspace.dependencies]
-path-kit = { path = "crates/path-kit", version = "0.3.1" }
-anim-kit = { path = "crates/anim-kit", version = "0.3.1" }
-scene-kit = { path = "crates/scene-kit", version = "0.3.1" }
-layout-kit = { path = "crates/layout-kit", version = "0.3.1" }
-paint-kit = { path = "crates/paint-kit", version = "0.3.1" }
-text-kit = { path = "crates/text-kit", version = "0.3.1" }
-window-kit = { path = "crates/window-kit", version = "0.3.1", default-features = false }
+path-kit = { path = "crates/path-kit", package = "fresco-path-kit", version = "0.3.1" }
+anim-kit = { path = "crates/anim-kit", package = "fresco-anim-kit", version = "0.3.1" }
+scene-kit = { path = "crates/scene-kit", package = "fresco-scene-kit", version = "0.3.1" }
+layout-kit = { path = "crates/layout-kit", package = "fresco-layout-kit", version = "0.3.1" }
+paint-kit = { path = "crates/paint-kit", package = "fresco-paint-kit", version = "0.3.1" }
+text-kit = { path = "crates/text-kit", package = "fresco-text-kit", version = "0.3.1" }
+window-kit = { path = "crates/window-kit", package = "fresco-window-kit", version = "0.3.1", default-features = false }
 criterion = "0.7"
 
 [profile.release]
