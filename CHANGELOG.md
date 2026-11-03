@@ -1,5 +1,17 @@
 # CHANGELOG
 
+## 0.3.3a (2026-11-03)
+
+Phase 3: text rendering path.
+
+- `text-kit`: 3×5 micro-font covering all printable ASCII —
+  deterministic per-character coverage bitmaps, integer scaling, glyph
+  ids aligned with the FakeEngine shaper.
+- `widget-kit`: `WidgetRenderer::label_text` blits micro-font glyphs
+  per pixel (premultiplied coverage blend); labels now show
+  distinguishable characters instead of solid placeholder boxes.
+  Gallery gains a per-character distinctness test.
+
 ## 0.3.3 (2026-11-03)
 
 Phase 3 continued: ScrollPane and TabList.

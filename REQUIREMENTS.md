@@ -91,6 +91,9 @@ Traceability for the fresco engine. REQ identifiers match `SPEC.md` section
   clip-rendered translated children.
 - REQ-K11 TabList: click cycles, focused arrows step, a11y name follows
   the active tab.
+- REQ-K12 labels render readable micro-font glyphs (no placeholder
+  boxes).
+- REQ-T5 text-kit micro-font covers printable ASCII, is deterministic.
 
 ## R11 Process
 
