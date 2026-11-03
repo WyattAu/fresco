@@ -340,11 +340,10 @@ pub fn parity_reduce(polys: &[Poly]) -> Vec<Poly> {
 mod tests {
     use super::*;
     use crate::Surface;
-    use crate::surface::unreachable_surface;
     use path_kit::Path;
 
     fn surface(w: usize, h: usize) -> Surface {
-        Surface::new(w, h).unwrap_or_else(unreachable_surface)
+        Surface::new(w, h).unwrap_or_default()
     }
 
     fn square_path(x: f64, y: f64, size: f64) -> Path {

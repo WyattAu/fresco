@@ -9,6 +9,19 @@ pub struct Surface {
     data: Vec<u8>,
 }
 
+impl Default for Surface {
+    /// A 1x1 transparent surface; exists so test and fallback paths can
+    /// name a surface without panicking on allocation failure.
+    fn default() -> Self {
+        Surface {
+            width: 1,
+            height: 1,
+            stride: 4,
+            data: Vec::new(),
+        }
+    }
+}
+
 impl Surface {
     /// New surface with tight packing (`stride == width * 4`).
     ///
@@ -219,27 +232,13 @@ impl Surface {
 }
 
 #[cfg(test)]
-pub(crate) fn unreachable_surface() -> Surface {
-    match Surface::new(1, 1) {
-        Some(s) => s,
-        None => Surface {
-            width: 1,
-            height: 1,
-            stride: 4,
-            data: Vec::new(),
-        },
-    }
-}
-
-#[cfg(test)]
 #[allow(clippy::indexing_slicing)]
 mod tests {
     use super::*;
 
     #[test]
     fn construct_and_access() {
-        let mut s = Surface::new(4, 3)
-            .unwrap_or_else(|| Surface::with_stride(1, 1, 4).unwrap_or_else(unreachable_surface));
+        let mut s = Surface::new(4, 3).unwrap_or_default();
         assert_eq!(s.width(), 4);
         assert_eq!(s.height(), 3);
         assert_eq!(s.stride(), 16);
@@ -247,15 +246,6 @@ mod tests {
         assert_eq!(s.pixel(2, 1), Some([10, 20, 30, 40]));
         assert_eq!(s.pixel(4, 1), None);
         assert_eq!(s.pixel(2, 3), None);
-    }
-
-    fn unreachable_surface() -> Surface {
-        Surface::new(1, 1).unwrap_or_else(|| Surface {
-            width: 1,
-            height: 1,
-            stride: 4,
-            data: Vec::new(),
-        })
     }
 
     #[test]
@@ -270,7 +260,7 @@ mod tests {
 
     #[test]
     fn stride_padding_isolated() {
-        let mut s = Surface::with_stride(3, 2, 16).unwrap_or_else(unreachable_surface);
+        let mut s = Surface::with_stride(3, 2, 16).unwrap_or_default();
         assert_eq!(s.stride(), 16);
         s.set_pixel(2, 0, [255, 0, 0, 255]);
         s.set_pixel(0, 1, [0, 255, 0, 255]);
@@ -280,7 +270,7 @@ mod tests {
 
     #[test]
     fn fill_and_clear() {
-        let mut s = Surface::new(3, 2).unwrap_or_else(unreachable_surface);
+        let mut s = Surface::new(3, 2).unwrap_or_default();
         s.fill_solid([10, 20, 30, 255]);
         assert_eq!(s.pixel(1, 1), Some([10, 20, 30, 255]));
         s.clear();
@@ -289,7 +279,7 @@ mod tests {
 
     #[test]
     fn blend_row_premul_math() {
-        let mut s = Surface::new(2, 1).unwrap_or_else(unreachable_surface);
+        let mut s = Surface::new(2, 1).unwrap_or_default();
         let cov = [0.0_f32, 0.5];
         let red = [255_u8, 0, 0, 255]; // premul opaque red
         s.blend_row(0, &cov, red);
@@ -301,7 +291,7 @@ mod tests {
 
     #[test]
     fn blend_row_over_existing() {
-        let mut s = Surface::new(1, 1).unwrap_or_else(unreachable_surface);
+        let mut s = Surface::new(1, 1).unwrap_or_default();
         s.set_pixel(0, 0, [100, 100, 100, 255]);
         let cov = [0.5_f32];
         let blue = [0_u8, 0, 255, 255];

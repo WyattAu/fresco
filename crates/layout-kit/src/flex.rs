@@ -44,8 +44,9 @@ impl FlexItem {
 /// children (REQ-L2).
 ///
 /// Rules, CSS-flexbox subset:
-/// - overflow (`free < 0`): shrink proportional to `shrink * basis`
-///   (fallback: even reduction when all shrink weights are zero);
+/// - overflow (`free < 0`): shrink proportional to `shrink * basis`;
+///   children with `shrink: 0` keep their basis and overflow (CSS
+///   semantics — the scroll-pane case);
 /// - underflow (`free > 0`): distribute by `grow` (none: pack at start);
 /// - min/max clamps apply last; leftover space is not redistributed (v0
 ///   limitation, documented in SPEC).
@@ -82,12 +83,9 @@ pub fn solve_flex(main_size: f64, gap: f64, items: &[FlexItem]) -> Vec<f64> {
             for (size, (b, it)) in sizes.iter_mut().zip(bases.iter().zip(items.iter())) {
                 *size -= over * (b * it.shrink.max(0.0)) / weighted;
             }
-        } else {
-            let even = over / f64::from(n as u32);
-            for size in sizes.iter_mut() {
-                *size -= even;
-            }
         }
+        // weighted == 0: nothing may shrink; children overflow the
+        // container (scroll-pane content).
     }
 
     // Clamps last; no redistribution (documented v0 limitation).
@@ -220,7 +218,9 @@ mod tests {
     }
 
     #[test]
-    fn all_zero_shrink_reduces_evenly() {
+    fn all_zero_shrink_overflows() {
+        // CSS semantics: flex-shrink 0 keeps the basis; content overflows
+        // the container (the scroll-pane case).
         let items = vec![
             FlexItem {
                 shrink: 0.0,
@@ -232,6 +232,6 @@ mod tests {
             },
         ];
         let got = solve_flex(10.0, 0.0, &items);
-        assert!(close(got[0], 5.0) && close(got[1], 5.0), "{:?}", got);
+        assert!(close(got[0], 10.0) && close(got[1], 10.0), "{:?}", got);
     }
 }

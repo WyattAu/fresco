@@ -161,6 +161,13 @@ A lower layer must never name a higher layer's types.
   CVD-deuteranopia) audits clean, renders deterministically, and pixels
   differ per variant.
   Oracle: `cargo test -p widget-kit --test theme_gallery`.
+- REQ-K10 (scroll): ScrollPane wheel offsets clamp to content bounds;
+  scrolling changes rendered pixels; hit testing applies scroll offsets
+  while descending.
+  Oracle: `cargo test -p widget-kit --test scroll_tabs`.
+- REQ-K11 (tabs): TabList click cycles the active tab; focused
+  Left/Right steps with wrap; the active tab name surfaces in a11y.
+  Oracle: `cargo test -p widget-kit --test scroll_tabs tab_list`.
 
 ## 5. Coverage tier
 

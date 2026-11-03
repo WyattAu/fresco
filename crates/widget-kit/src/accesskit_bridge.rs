@@ -51,6 +51,8 @@ fn walk(tree: &WidgetTree, current: Option<crate::WidgetRef>, built: &mut Vec<(N
         WidgetKind::Checkbox { .. } => Role::CheckBox,
         WidgetKind::TextField { .. } => Role::TextInput,
         WidgetKind::Row { .. } | WidgetKind::Column { .. } | WidgetKind::Spacer => Role::Group,
+        WidgetKind::ScrollPane { .. } => Role::List,
+        WidgetKind::TabList { .. } => Role::TabList,
     });
     match &w.kind {
         WidgetKind::Label { text, .. } => node.set_label(text.clone()),
@@ -68,6 +70,7 @@ fn walk(tree: &WidgetTree, current: Option<crate::WidgetRef>, built: &mut Vec<(N
             }
         }
         WidgetKind::Row { .. } | WidgetKind::Column { .. } | WidgetKind::Spacer => {}
+        WidgetKind::ScrollPane { .. } | WidgetKind::TabList { .. } => {}
     }
     let child_ids: Vec<NodeId> = tree.children_of(r).iter().map(|c| node_id(*c)).collect();
     if !child_ids.is_empty() {
