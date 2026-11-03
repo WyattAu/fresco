@@ -14,7 +14,21 @@ exclude = ["/target"]
 layout-kit = { workspace = true }
 paint-kit = { workspace = true }
 text-kit = { workspace = true }
+window-kit = { workspace = true }
 a11y-kit = { git = "https://github.com/WyattAu/a11y-kit", version = "0.2.1" }
+ui-text-edit = "0.1"
+
+[features]
+default = []
+accesskit = ["dep:accesskit"]
+
+[dependencies.accesskit]
+version = "0.25"
+optional = true
+
+[dev-dependencies]
+render-conformance = { path = "../render-conformance" }
+ui-text-edit = "0.1"
 
 [lints.rust]
 missing_docs = "deny"

@@ -79,6 +79,12 @@ Traceability for the fresco engine. REQ identifiers match `SPEC.md` section
 - REQ-K3 wrapping focus chain; Enter/Space activation.
 - REQ-K4 a11y emission with roles, tri-state, focus; audit clean.
 - REQ-K5 stock renderer paints every kind.
+- REQ-K6 text field: caret-accurate insert/backspace/delete/motion over
+  ui-text-edit.
+- REQ-K7 accesskit bridge (feature `accesskit`): roles, toggled, value,
+  focus on the update.
+- REQ-K8 gallery golden hashes: alpha and RGB per palette, determinism
+  strict-compare.
 
 ## R11 Process
 

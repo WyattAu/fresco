@@ -24,6 +24,9 @@ pub trait WidgetRenderer {
 
     /// Container panel fill.
     fn panel(&mut self, rect: Rect2D, color: [u8; 4]);
+
+    /// Text entry chrome: entry box, caret when focused.
+    fn text_field(&mut self, rect: Rect2D, colors: &WidgetColors, focused: bool);
 }
 
 /// Default palette (neutral dark); callers override with theme-kit
@@ -173,6 +176,32 @@ impl WidgetRenderer for DrawListPainter<'_> {
     fn panel(&mut self, rect: Rect2D, color: [u8; 4]) {
         self.fill(rect, color);
     }
+
+    fn text_field(&mut self, rect: Rect2D, colors: &WidgetColors, focused: bool) {
+        // Entry box (inset 2 px) plus caret line at the leading edge
+        // when focused.
+        let inset = 2.0;
+        let box_rect = Rect2D {
+            x: rect.x + inset,
+            y: rect.y + inset,
+            width: rect.width - inset * 2.0,
+            height: rect.height - inset * 2.0,
+        };
+        self.fill(box_rect, colors.checkbox_box);
+        if focused {
+            let caret_h = (box_rect.height * 0.7).ceil();
+            let caret_y = box_rect.y + (box_rect.height - caret_h) * 0.5;
+            self.fill(
+                Rect2D {
+                    x: box_rect.x + 3.0,
+                    y: caret_y,
+                    width: 1.0,
+                    height: caret_h,
+                },
+                colors.focus_ring,
+            );
+        }
+    }
 }
 
 /// Paint a whole tree: root panel, then widgets back-to-front.
@@ -219,6 +248,7 @@ fn paint_children(
             WidgetKind::Checkbox { checked, .. } => {
                 renderer.checkbox(rect, colors, *checked, w.focused);
             }
+            WidgetKind::TextField { .. } => renderer.text_field(rect, colors, w.focused),
             WidgetKind::Row { .. } | WidgetKind::Column { .. } | WidgetKind::Spacer => {}
         }
         paint_children(tree, Some(r), renderer, colors);

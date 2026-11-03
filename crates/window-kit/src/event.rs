@@ -54,6 +54,35 @@ pub enum Event {
         /// Press state.
         state: KeyCharState,
     },
+    /// Editing/navigation key that carries no text (Backspace, Delete,
+    /// arrows, Home, End). Tab stays in [`Event::KeyChar`] as `\t`.
+    KeyNav {
+        /// Which navigation key.
+        key: NavKey,
+        /// Press state.
+        state: KeyCharState,
+    },
+}
+
+/// Text-free editing and navigation keys.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NavKey {
+    /// Delete the cluster before the caret.
+    Backspace,
+    /// Delete the cluster after the caret.
+    Delete,
+    /// Caret one cluster left.
+    Left,
+    /// Caret one cluster right.
+    Right,
+    /// Caret to the start.
+    Home,
+    /// Caret to the end.
+    End,
+    /// Focus the next focusable widget.
+    Tab,
+    /// Focus the previous focusable widget.
+    BackTab,
 }
 
 /// Physical pixel size.

@@ -29,9 +29,13 @@
 #![forbid(unsafe_code)]
 
 pub mod a11y;
+#[cfg(feature = "accesskit")]
+pub mod accesskit_bridge;
 pub mod render;
 
 pub use a11y::emit_a11y_tree;
+#[cfg(feature = "accesskit")]
+pub use accesskit_bridge::emit_accesskit_update;
 pub use render::{DrawListPainter, WidgetColors, WidgetRenderer, paint_tree};
 
 pub use layout_kit::engine::Size2D;
@@ -40,6 +44,8 @@ use layout_kit::{Axis, FlowEngine, LayoutEngine};
 use std::vec::Vec;
 use text_kit::fake::FakeEngine;
 use text_kit::{FontId, ShapeQuery, TextEngine};
+use ui_text_edit::{StringBuffer, TextField as TextEditField};
+pub use window_kit::event::NavKey;
 
 /// Stable widget handle (index into the tree's arena).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -81,10 +87,17 @@ pub enum WidgetKind {
     },
     /// Flexible empty space.
     Spacer,
+    /// Single-line text entry over a ui-text-edit field.
+    TextField {
+        /// Placeholder shown when empty.
+        placeholder: String,
+        /// The field (buffer + caret + selection).
+        field: TextEditField<StringBuffer>,
+    },
 }
 
 /// Widget state: kind plus geometry and interaction flags.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct Widget {
     /// What it is.
     pub kind: WidgetKind,
@@ -250,6 +263,14 @@ impl WidgetTree {
                     ..NodeStyle::default()
                 };
             }
+            WidgetKind::TextField { .. } => {
+                return NodeStyle {
+                    width: w.fixed_width.or(Some(120.0)),
+                    height: w.fixed_height.or(Some(28.0)),
+                    grow: w.grow,
+                    ..NodeStyle::default()
+                };
+            }
             _ => NodeStyle::default(),
         };
         style.width = w.fixed_width;
@@ -289,6 +310,14 @@ impl WidgetTree {
             Some(WidgetKind::Label { text, .. }) => Some(text.clone()),
             Some(WidgetKind::Button { label, .. }) => Some(label.clone()),
             Some(WidgetKind::Checkbox { label, .. }) => Some(label.clone()),
+            Some(WidgetKind::TextField { placeholder, field }) => {
+                let text = field.text();
+                if text.is_empty() {
+                    Some(placeholder.clone())
+                } else {
+                    Some(text.to_string())
+                }
+            }
             _ => None,
         }
     }
@@ -322,6 +351,16 @@ impl WidgetTree {
         for k in kids {
             self.apply_rects(engine, k);
         }
+    }
+
+    /// Push a single-line text field with a placeholder.
+    pub fn add_text_field(&mut self, parent: WidgetRef, placeholder: &str) -> WidgetRef {
+        let r = self.push(WidgetKind::TextField {
+            placeholder: placeholder.to_string(),
+            field: TextEditField::new(StringBuffer::new()),
+        });
+        self.add_child(parent, r);
+        r
     }
 
     /// Focus the next focusable widget in tree order, wrapping.
@@ -404,16 +443,156 @@ impl WidgetTree {
         }
     }
 
-    /// Keyboard character: Tab traversal and activation keys.
+    /// Keyboard character: Tab traversal and activation keys; printable
+    /// characters route to the focused text field.
     pub fn key_char(&mut self, ch: char) {
         match ch {
             '\t' => self.focus_next(),
             '\n' | ' ' => {
                 if let Some(f) = self.focus {
-                    self.activate(f);
+                    if self.kind_is_text_field(f) {
+                        self.field_insert(f, ch);
+                    } else {
+                        self.activate(f);
+                    }
                 }
             }
-            _ => {}
+            c => {
+                if let Some(f) = self.focus
+                    && self.kind_is_text_field(f)
+                {
+                    self.field_insert(f, c);
+                }
+            }
+        }
+    }
+
+    /// Navigation keys: caret motion for the focused text field, focus
+    /// traversal for BackTab, activation for Enter.
+    pub fn key_nav(&mut self, key: NavKey) {
+        match key {
+            NavKey::Tab => self.focus_next(),
+            NavKey::BackTab => self.focus_prev(),
+            NavKey::Backspace => {
+                if let Some(f) = self.focus {
+                    self.field_backspace(f);
+                }
+            }
+            NavKey::Delete => {
+                if let Some(f) = self.focus {
+                    self.field_delete_forward(f);
+                }
+            }
+            NavKey::Left => {
+                if let Some(f) = self.focus
+                    && self.kind_is_text_field(f)
+                {
+                    self.field_move(f, -1);
+                }
+            }
+            NavKey::Right => {
+                if let Some(f) = self.focus
+                    && self.kind_is_text_field(f)
+                {
+                    self.field_move(f, 1);
+                }
+            }
+            NavKey::Home => {
+                if let Some(f) = self.focus
+                    && self.kind_is_text_field(f)
+                {
+                    self.field_home(f);
+                }
+            }
+            NavKey::End => {
+                if let Some(f) = self.focus
+                    && self.kind_is_text_field(f)
+                {
+                    self.field_end(f);
+                }
+            }
+        }
+    }
+
+    /// Enter for the facade's KeyChar '\n' on text fields inserts a
+    /// newline only in multiline fields; single-line fields activate
+    /// like buttons (no-op v0).
+    fn kind_is_text_field(&self, r: WidgetRef) -> bool {
+        matches!(
+            self.widgets.get(r.0).map(|w| &w.kind),
+            Some(WidgetKind::TextField { .. })
+        )
+    }
+
+    fn with_field(&mut self, r: WidgetRef, f: impl FnOnce(&mut TextEditField<StringBuffer>)) {
+        if let Some(Widget {
+            kind: WidgetKind::TextField { field, .. },
+            ..
+        }) = self.widgets.get_mut(r.0)
+        {
+            f(field);
+        }
+    }
+
+    fn field_insert(&mut self, r: WidgetRef, ch: char) {
+        self.with_field(r, |field| {
+            field.replace_selection(&ch.to_string());
+        });
+    }
+
+    fn field_backspace(&mut self, r: WidgetRef) {
+        self.with_field(r, |field| {
+            field.backspace();
+        });
+    }
+
+    fn field_delete_forward(&mut self, r: WidgetRef) {
+        self.with_field(r, |field| {
+            field.delete_forward();
+        });
+    }
+
+    fn field_move(&mut self, r: WidgetRef, delta: i32) {
+        self.with_field(r, |field| {
+            if delta < 0 {
+                field.move_left();
+            } else {
+                field.move_right();
+            }
+        });
+    }
+
+    fn field_home(&mut self, r: WidgetRef) {
+        self.with_field(r, |field| field.move_to_start());
+    }
+
+    fn field_end(&mut self, r: WidgetRef) {
+        self.with_field(r, |field| field.move_to_end());
+    }
+
+    /// Text content of a text field.
+    #[must_use]
+    pub fn field_text(&self, r: WidgetRef) -> String {
+        match self.widgets.get(r.0).map(|w| &w.kind) {
+            Some(WidgetKind::TextField { field, .. }) => field.text().to_string(),
+            _ => String::new(),
+        }
+    }
+
+    /// Caret cluster index of a text field.
+    #[must_use]
+    pub fn field_caret(&self, r: WidgetRef) -> usize {
+        match self.widgets.get(r.0).map(|w| &w.kind) {
+            Some(WidgetKind::TextField { field, .. }) => field.caret(),
+            _ => 0,
+        }
+    }
+
+    /// Mutable field access (tests and consumers).
+    pub fn field_mut(&mut self, r: WidgetRef) -> Option<&mut TextEditField<StringBuffer>> {
+        match self.widgets.get_mut(r.0).map(|w| &mut w.kind) {
+            Some(WidgetKind::TextField { field, .. }) => Some(field),
+            _ => None,
         }
     }
 
