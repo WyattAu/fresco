@@ -87,6 +87,10 @@ Traceability for the fresco engine. REQ identifiers match `SPEC.md` section
   strict-compare.
 - REQ-K9 theme adapter: seed graph WCAG-audited; derived variants
   (incl. CVD) audited and rendered deterministically.
+- REQ-K10 ScrollPane: clamped offsets, viewport-correct hit testing,
+  clip-rendered translated children.
+- REQ-K11 TabList: click cycles, focused arrows step, a11y name follows
+  the active tab.
 
 ## R11 Process
 

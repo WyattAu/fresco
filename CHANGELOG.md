@@ -1,5 +1,23 @@
 # CHANGELOG
 
+## 0.3.3 (2026-11-03)
+
+Phase 3 continued: ScrollPane and TabList.
+
+- `widget-kit`: ScrollPane (clipped viewport, wheel clamped to content
+  bounds, children translated by scroll offset, flex-shrink-0 overflow
+  semantics in layout-kit so scroll content keeps its natural height);
+  TabList (click cycles, focused Left/Right steps, active tab rendered
+  in the focus color). Both emit audited a11y roles (List, TabList) and
+  render through the stock renderer with clip support.
+- `layout-kit`: flex overflow now follows CSS flex-shrink-0 semantics
+  (zero-shrink children keep their basis and overflow the container —
+  the scroll-pane case) instead of the old even-reduction fallback.
+- `paint-kit`: Surface implements Default (1x1 transparent) for
+  panic-free test fallbacks.
+- Facade: hit testing applies ScrollPane offsets while descending, so
+  pointer coordinates are viewport-correct at any scroll position.
+
 ## 0.3.2 (2026-11-03)
 
 Phase 3.4: theme-driven styling.

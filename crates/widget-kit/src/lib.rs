@@ -95,6 +95,20 @@ pub enum WidgetKind {
         /// The field (buffer + caret + selection).
         field: TextEditField<StringBuffer>,
     },
+    /// Clipped viewport over one content container. Wheel input moves
+    /// [`WidgetTree::scroll_offset`]; rendering clips to the viewport.
+    ScrollPane {
+        /// Vertical scroll offset in logical pixels (0 = top).
+        scroll_y: f64,
+    },
+    /// Tab strip: the active tab is the shown name; Left/Right (focused)
+    /// or click move it.
+    TabList {
+        /// Tab names in order.
+        tabs: Vec<String>,
+        /// Active tab index.
+        active: usize,
+    },
 }
 
 /// Widget state: kind plus geometry and interaction flags.
@@ -168,7 +182,12 @@ impl WidgetTree {
     pub fn push(&mut self, kind: WidgetKind) -> WidgetRef {
         self.widgets.push(Widget::new(kind));
         self.children.push(Vec::new());
-        WidgetRef(self.widgets.len() - 1)
+        let r = WidgetRef(self.widgets.len() - 1);
+        // The first pushed widget is the root container.
+        if self.root.is_none() {
+            self.root = Some(r);
+        }
+        r
     }
 
     /// Add `child` under `parent`. The first added widget at depth zero
@@ -272,6 +291,21 @@ impl WidgetTree {
                     ..NodeStyle::default()
                 };
             }
+            WidgetKind::ScrollPane { .. } => {
+                return NodeStyle {
+                    direction: Axis::Column,
+                    height: w.fixed_height.or(Some(120.0)),
+                    grow: w.grow,
+                    ..NodeStyle::default()
+                };
+            }
+            WidgetKind::TabList { .. } => {
+                return NodeStyle {
+                    height: w.fixed_height.or(Some(28.0)),
+                    grow: w.grow,
+                    ..NodeStyle::default()
+                };
+            }
             _ => NodeStyle::default(),
         };
         style.width = w.fixed_width;
@@ -318,6 +352,9 @@ impl WidgetTree {
                 } else {
                     Some(text.to_string())
                 }
+            }
+            Some(WidgetKind::TabList { tabs, active }) => {
+                Some(tabs.get(*active).cloned().unwrap_or_default())
             }
             _ => None,
         }
@@ -485,17 +522,21 @@ impl WidgetTree {
                 }
             }
             NavKey::Left => {
-                if let Some(f) = self.focus
-                    && self.kind_is_text_field(f)
-                {
-                    self.field_move(f, -1);
+                if let Some(f) = self.focus {
+                    if self.kind_is_text_field(f) {
+                        self.field_move(f, -1);
+                    } else if self.kind_is_tab_list(f) {
+                        self.tab_step(f, -1);
+                    }
                 }
             }
             NavKey::Right => {
-                if let Some(f) = self.focus
-                    && self.kind_is_text_field(f)
-                {
-                    self.field_move(f, 1);
+                if let Some(f) = self.focus {
+                    if self.kind_is_text_field(f) {
+                        self.field_move(f, 1);
+                    } else if self.kind_is_tab_list(f) {
+                        self.tab_step(f, 1);
+                    }
                 }
             }
             NavKey::Home => {
@@ -523,6 +564,111 @@ impl WidgetTree {
             self.widgets.get(r.0).map(|w| &w.kind),
             Some(WidgetKind::TextField { .. })
         )
+    }
+
+    fn kind_is_tab_list(&self, r: WidgetRef) -> bool {
+        matches!(
+            self.widgets.get(r.0).map(|w| &w.kind),
+            Some(WidgetKind::TabList { .. })
+        )
+    }
+
+    /// Move the active tab of a TabList by `delta` (wrapping).
+    pub fn tab_step(&mut self, r: WidgetRef, delta: i32) {
+        let Some(Widget {
+            kind: WidgetKind::TabList { tabs, active },
+            ..
+        }) = self.widgets.get_mut(r.0)
+        else {
+            return;
+        };
+        if tabs.is_empty() {
+            return;
+        }
+        let n = tabs.len() as i32;
+        *active = ((*active as i32) + delta).rem_euclid(n) as usize;
+    }
+
+    /// Active tab name of a TabList.
+    #[must_use]
+    pub fn active_tab(&self, r: WidgetRef) -> Option<String> {
+        match self.widgets.get(r.0).map(|w| &w.kind) {
+            Some(WidgetKind::TabList { tabs, active }) => tabs.get(*active).cloned(),
+            _ => None,
+        }
+    }
+
+    /// Scroll a ScrollPane (or the ScrollPane containing the hit widget)
+    /// by `delta_y` (positive = view moves up). The offset clamps to
+    /// `[0, content height - viewport height]`.
+    pub fn scroll(&mut self, at: LogicalAt, delta_y: f64) {
+        let Some(hit) = self.hit_test(at) else {
+            return;
+        };
+        let mut cursor = hit;
+        let pane = loop {
+            if matches!(
+                self.widgets.get(cursor.0).map(|w| &w.kind),
+                Some(WidgetKind::ScrollPane { .. })
+            ) {
+                break Some(cursor);
+            }
+            match self.parent_of(cursor) {
+                Some(p) => cursor = p,
+                None => break None,
+            }
+        };
+        let Some(pane) = pane else {
+            return;
+        };
+        let current = match self.widgets.get(pane.0).map(|w| &w.kind) {
+            Some(WidgetKind::ScrollPane { scroll_y }) => *scroll_y,
+            _ => return,
+        };
+        let Some((content_h, viewport_h)) = self.scroll_extents(pane) else {
+            return;
+        };
+        let max = (content_h - viewport_h).max(0.0);
+        let next = (current - delta_y).clamp(0.0, max);
+        if let Some(Widget {
+            kind: WidgetKind::ScrollPane { scroll_y },
+            ..
+        }) = self.widgets.get_mut(pane.0)
+        {
+            *scroll_y = next;
+        }
+    }
+
+    /// Scroll offset of a ScrollPane.
+    #[must_use]
+    pub fn scroll_offset(&self, r: WidgetRef) -> f64 {
+        match self.widgets.get(r.0).map(|w| &w.kind) {
+            Some(WidgetKind::ScrollPane { scroll_y }) => *scroll_y,
+            _ => 0.0,
+        }
+    }
+
+    fn scroll_extents(&self, pane: WidgetRef) -> Option<(f64, f64)> {
+        let w = self.widgets.get(pane.0)?;
+        let viewport_h = if w.rect.height > 0.0 {
+            w.rect.height
+        } else {
+            w.fixed_height.unwrap_or(120.0)
+        };
+        let child = self.children_of(pane).first().copied()?;
+        let content_h = self.widget(child).map(|c| c.rect.height).unwrap_or(0.0);
+        Some((content_h, viewport_h))
+    }
+
+    /// Parent handle of a widget (None for the root or orphans).
+    #[must_use]
+    pub fn parent_of(&self, r: WidgetRef) -> Option<WidgetRef> {
+        for (i, kids) in self.children.iter().enumerate() {
+            if kids.contains(&r) {
+                return Some(WidgetRef(i));
+            }
+        }
+        None
     }
 
     fn with_field(&mut self, r: WidgetRef, f: impl FnOnce(&mut TextEditField<StringBuffer>)) {
@@ -608,6 +754,9 @@ impl WidgetTree {
             }
             WidgetKind::Checkbox { checked, .. } => {
                 *checked = !*checked;
+            }
+            WidgetKind::TabList { tabs, active } if !tabs.is_empty() => {
+                *active = ((*active as i32) + 1).rem_euclid(tabs.len() as i32) as usize;
             }
             _ => {}
         }

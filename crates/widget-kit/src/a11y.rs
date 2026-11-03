@@ -62,6 +62,13 @@ fn walk(
             )
         }
         WidgetKind::Spacer => (A11yRole::Group, String::new(), None, false),
+        WidgetKind::ScrollPane { .. } => (A11yRole::List, String::new(), None, false),
+        WidgetKind::TabList { tabs, active } => (
+            A11yRole::TabList,
+            tabs.get(*active).cloned().unwrap_or_default(),
+            None,
+            w.focused,
+        ),
         WidgetKind::TextField { .. } => (A11yRole::Textbox, String::new(), None, w.focused),
     };
     let states = States {

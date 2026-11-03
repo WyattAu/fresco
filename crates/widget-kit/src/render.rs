@@ -27,6 +27,24 @@ pub trait WidgetRenderer {
 
     /// Text entry chrome: entry box, caret when focused.
     fn text_field(&mut self, rect: Rect2D, colors: &WidgetColors, focused: bool);
+
+    /// Push a clip rect (scissor) for a clipped container.
+    fn push_clip(&mut self, _rect: Rect2D) {}
+
+    /// Pop the last clip.
+    fn pop_clip(&mut self) {}
+
+    /// Tab strip chrome: strip fill, per-tab boxes, active tab marker.
+    fn tab_strip(
+        &mut self,
+        rect: Rect2D,
+        tabs: &[String],
+        active: usize,
+        colors: &WidgetColors,
+        focused: bool,
+    ) {
+        let _ = (rect, tabs, active, colors, focused);
+    }
 }
 
 /// Default palette (neutral dark); callers override with theme-kit
@@ -204,7 +222,8 @@ impl WidgetRenderer for DrawListPainter<'_> {
     }
 }
 
-/// Paint a whole tree: root panel, then widgets back-to-front.
+/// Paint a whole tree: root panel, then widgets back-to-front. A root
+/// ScrollPane clips and translates its children.
 pub fn paint_tree(
     tree: &WidgetTree,
     surface: &mut Surface,
@@ -216,17 +235,30 @@ pub fn paint_tree(
         painter,
         colors: *colors,
     };
-    if let Some(root) = tree.root()
-        && let Some(rect) = tree.widget(root).map(|w| w.rect)
-    {
+    let Some(root) = tree.root() else {
+        return;
+    };
+    if let Some(rect) = tree.widget(root).map(|w| w.rect) {
         renderer.panel(rect, colors.surface);
     }
-    paint_children(tree, tree.root(), &mut renderer, colors);
+    let root_scroll = match tree.widget(root).map(|w| &w.kind) {
+        Some(WidgetKind::ScrollPane { scroll_y }) => Some(*scroll_y),
+        _ => None,
+    };
+    match root_scroll {
+        Some(scroll_y) => {
+            renderer.push_clip(tree.widget(root).map(|w| w.rect).unwrap_or_default());
+            paint_children(tree, Some(root), (0.0, -scroll_y), &mut renderer, colors);
+            renderer.pop_clip();
+        }
+        None => paint_children(tree, Some(root), (0.0, 0.0), &mut renderer, colors),
+    }
 }
 
 fn paint_children(
     tree: &WidgetTree,
     parent: Option<WidgetRef>,
+    offset: (f64, f64),
     renderer: &mut dyn WidgetRenderer,
     colors: &WidgetColors,
 ) {
@@ -236,22 +268,54 @@ fn paint_children(
     let mut queue: Vec<WidgetRef> = tree.children_of(parent);
     queue.reverse();
     for r in queue {
-        let Some(w) = tree.widget(r) else {
-            continue;
-        };
-        let rect = w.rect;
-        match &w.kind {
-            WidgetKind::Label { .. } => renderer.label_box(rect, colors.text),
-            WidgetKind::Button { .. } => {
-                renderer.button_frame(rect, colors, w.focused, w.pressed);
-            }
-            WidgetKind::Checkbox { checked, .. } => {
-                renderer.checkbox(rect, colors, *checked, w.focused);
-            }
-            WidgetKind::TextField { .. } => renderer.text_field(rect, colors, w.focused),
-            WidgetKind::Row { .. } | WidgetKind::Column { .. } | WidgetKind::Spacer => {}
+        paint_node(tree, r, offset, renderer, colors);
+    }
+}
+
+fn paint_node(
+    tree: &WidgetTree,
+    r: WidgetRef,
+    offset: (f64, f64),
+    renderer: &mut dyn WidgetRenderer,
+    colors: &WidgetColors,
+) {
+    let Some(w) = tree.widget(r) else {
+        return;
+    };
+    let rect = Rect2D {
+        x: w.rect.x + offset.0,
+        y: w.rect.y + offset.1,
+        width: w.rect.width,
+        height: w.rect.height,
+    };
+    let is_scroll = matches!(&w.kind, WidgetKind::ScrollPane { .. });
+    match &w.kind {
+        WidgetKind::Label { .. } => renderer.label_box(rect, colors.text),
+        WidgetKind::Button { .. } => {
+            renderer.button_frame(rect, colors, w.focused, w.pressed);
         }
-        paint_children(tree, Some(r), renderer, colors);
+        WidgetKind::Checkbox { checked, .. } => {
+            renderer.checkbox(rect, colors, *checked, w.focused);
+        }
+        WidgetKind::TextField { .. } => renderer.text_field(rect, colors, w.focused),
+        WidgetKind::ScrollPane { scroll_y } => {
+            renderer.push_clip(rect);
+            paint_children(
+                tree,
+                Some(r),
+                (offset.0, offset.1 - *scroll_y),
+                renderer,
+                colors,
+            );
+            renderer.pop_clip();
+        }
+        WidgetKind::TabList { tabs, active } => {
+            renderer.tab_strip(rect, tabs, *active, colors, w.focused);
+        }
+        WidgetKind::Row { .. } | WidgetKind::Column { .. } | WidgetKind::Spacer => {}
+    }
+    if !is_scroll {
+        paint_children(tree, Some(r), offset, renderer, colors);
     }
 }
 
