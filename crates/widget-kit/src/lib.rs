@@ -32,6 +32,7 @@ pub mod a11y;
 #[cfg(feature = "accesskit")]
 pub mod accesskit_bridge;
 pub mod render;
+pub mod theme;
 
 pub use a11y::emit_a11y_tree;
 #[cfg(feature = "accesskit")]

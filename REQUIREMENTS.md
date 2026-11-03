@@ -85,6 +85,8 @@ Traceability for the fresco engine. REQ identifiers match `SPEC.md` section
   focus on the update.
 - REQ-K8 gallery golden hashes: alpha and RGB per palette, determinism
   strict-compare.
+- REQ-K9 theme adapter: seed graph WCAG-audited; derived variants
+  (incl. CVD) audited and rendered deterministically.
 
 ## R11 Process
 

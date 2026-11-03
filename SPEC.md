@@ -156,6 +156,11 @@ A lower layer must never name a higher layer's types.
 - REQ-K8 (gallery): every widget kind x palette renders deterministically
   and matches checked-in FNV baselines (alpha and RGB checked apart).
   Oracle: `cargo test -p widget-kit --test gallery`.
+- REQ-K9 (theme): the seed token graph audits clean through theme-kit's
+  WCAG gate; every derived variant (Light, HighContrast, Monochrome,
+  CVD-deuteranopia) audits clean, renders deterministically, and pixels
+  differ per variant.
+  Oracle: `cargo test -p widget-kit --test theme_gallery`.
 
 ## 5. Coverage tier
 

@@ -24,7 +24,7 @@ estate; fresco owns the middle of the stack between semantics and pixels.
 | `window-kit` | L2 platform | implemented (facade + fake; winit backend default feature) | Estate window/event/present/frame-clock traits, winit + softbuffer software present, headless fake runner |
 | `text-kit` | L2 | implemented (core + Parley feature) | `TextEngine` trait (ADR-0002), deterministic fake engine, shelf-packed glyph atlas with LRU (887), Parley 0.12 backend |
 | `widget-kit` | L3 controls | implemented (Gate D spike) | Retained widget model, hit testing, wrapping focus chain, keyboard activation, a11y-kit emission (audited), renderer contract + paint-kit stock renderer; TextField over
-  ui-text-edit; AccessKit bridge (feature); gallery golden hashes |
+  ui-text-edit; AccessKit bridge (feature); gallery golden hashes; theme-kit adapter (WCAG-audited seed + CVD-derived variants) |
 | `render-conformance` | L3 | implemented | Golden-image differential harness, BMP diff output, buffer hashing. `publish = false` |
 
 Deferred by ADR: text shaping (`ADR-0002`), windowing (`ADR-0003`), the GPU

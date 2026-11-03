@@ -1,5 +1,17 @@
 # CHANGELOG
 
+## 0.3.2 (2026-11-03)
+
+Phase 3.4: theme-driven styling.
+
+- `widget-kit` theme adapter: `seed_graph()` (WCAG-audited dark seed),
+  `variant_graph()` / `variant_colors()` (Light, HighContrast,
+  Monochrome, CVD-deuteranopia via theme-kit's Oklab retinting),
+  `colors_from_graph()` (roles to widget palette). Theme gallery test:
+  every variant audits clean through theme-kit's gate, renders
+  deterministically, and has distinct pixels.
+- Deps: theme-kit 0.1.1, color-kit 0.1.
+
 ## 0.3.1 (2026-11-03)
 
 Phase 3 continuation.
