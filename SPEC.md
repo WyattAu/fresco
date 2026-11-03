@@ -145,6 +145,17 @@ A lower layer must never name a higher layer's types.
 - REQ-K5 (render): the stock renderer covers every widget kind with
   opaque pixels (paint-kit path).
   Oracle: `cargo test -p widget-kit --test a11y_render paint_tree`.
+- REQ-K6 (text field): single-line entry over ui-text-edit; printable
+  characters insert at the caret, Backspace/Delete/Home/End/Left/Right
+  navigate per the caret model.
+  Oracle: `cargo test -p widget-kit text_field_edits`.
+- REQ-K7 (accesskit bridge, feature `accesskit`): the widget tree lowers
+  to an AccessKit `TreeUpdate` with roles, toggled state, text-entry
+  values, and the focused node id.
+  Oracle: `cargo test -p widget-kit --features accesskit`.
+- REQ-K8 (gallery): every widget kind x palette renders deterministically
+  and matches checked-in FNV baselines (alpha and RGB checked apart).
+  Oracle: `cargo test -p widget-kit --test gallery`.
 
 ## 5. Coverage tier
 

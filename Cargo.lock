@@ -27,6 +27,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "366ffbaa4442f4684d91e2cd7c5ea7c4ed8add41959a31447066e279e432b618"
 
 [[package]]
+name = "accesskit"
+version = "0.25.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4e883d1d28c5fd5568c79ed2d2bd48d9f2fd3945c8974ed0f53690ceddb051be"
+dependencies = [
+ "uuid",
+]
+
+[[package]]
 name = "ahash"
 version = "0.8.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -81,7 +90,7 @@ checksum = "4b46cbb362ab8752921c97e041f5e366ee6297bd428a31275b9fcf1e380f7299"
 
 [[package]]
 name = "anim-kit"
-version = "0.3.0"
+version = "0.3.1"
 
 [[package]]
 name = "anstyle"
@@ -843,6 +852,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "input-kit"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7e6bc81165eb3e88a58c7eccad8cbf614cc5ecd88a480c6be6fc0e2e268d1c76"
+dependencies = [
+ "thiserror 2.0.21",
+ "unicode-segmentation",
+]
+
+[[package]]
 name = "itertools"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -938,7 +957,7 @@ dependencies = [
 
 [[package]]
 name = "layout-kit"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "taffy",
 ]
@@ -1386,7 +1405,7 @@ dependencies = [
 
 [[package]]
 name = "paint-kit"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "path-kit",
 ]
@@ -1449,7 +1468,7 @@ dependencies = [
 
 [[package]]
 name = "path-kit"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "criterion",
 ]
@@ -1694,7 +1713,7 @@ checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
 name = "render-conformance"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "paint-kit",
  "path-kit",
@@ -1752,7 +1771,7 @@ dependencies = [
 
 [[package]]
 name = "scene-kit"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "path-kit",
 ]
@@ -2003,7 +2022,7 @@ dependencies = [
 
 [[package]]
 name = "text-kit"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "parley",
 ]
@@ -2169,6 +2188,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d2df906b07856748fa3f6e0ad0cbaa047052d4a7dd609e231c4f72cee8c36f31"
 
 [[package]]
+name = "ui-text-edit"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "65a4ce3bd8061b6fbadde1468170f7561ff01ac0d517c3167a4a4519714a8171"
+dependencies = [
+ "input-kit",
+]
+
+[[package]]
 name = "unicode-ident"
 version = "1.0.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2194,6 +2222,12 @@ name = "utf_types"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3a3b425286980a367278453f3b6d28cdcb134b574e5a35824a6ff5eebad50bb6"
+
+[[package]]
+name = "uuid"
+version = "1.29.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4a0e2d11620c50695fe12bbbfde96b3477fe606e7284c22d505c12ce51214514"
 
 [[package]]
 name = "version_check"
@@ -2406,12 +2440,16 @@ dependencies = [
 
 [[package]]
 name = "widget-kit"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "a11y-kit",
+ "accesskit",
  "layout-kit",
  "paint-kit",
+ "render-conformance",
  "text-kit",
+ "ui-text-edit",
+ "window-kit",
 ]
 
 [[package]]
@@ -2425,7 +2463,7 @@ dependencies = [
 
 [[package]]
 name = "window-kit"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "softbuffer",
  "winit",

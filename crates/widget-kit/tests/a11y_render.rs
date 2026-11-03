@@ -73,6 +73,42 @@ fn a11y_focus_state_tracks_widget_focus() {
 }
 
 #[test]
+fn text_field_edits_and_reports() {
+    let mut tree = widget_kit::WidgetTree::new();
+    let root = tree.push(WidgetKind::Column { gap: 4.0 });
+    let field = tree.add_text_field(root, "Search");
+    tree.compute(WSize {
+        width: 300.0,
+        height: 60.0,
+    });
+    tree.set_focus(Some(field));
+    for ch in "kiwi".chars() {
+        tree.key_char(ch);
+    }
+    assert_eq!(tree.field_text(field), "kiwi");
+    assert_eq!(tree.field_caret(field), 4);
+    // Left, Left: caret 2; insert 'w' between the i's.
+    tree.key_nav(widget_kit::NavKey::Left);
+    tree.key_nav(widget_kit::NavKey::Left);
+    tree.key_char('w');
+    assert_eq!(tree.field_text(field), "kiwwi");
+    assert_eq!(tree.field_caret(field), 3);
+    // Backspace removes the cluster before the caret (the inserted 'w').
+    tree.key_nav(widget_kit::NavKey::Backspace);
+    assert_eq!(tree.field_text(field), "kiwi");
+    assert_eq!(tree.field_caret(field), 2);
+    // Delete removes the cluster after the caret (the remaining 'w',
+    // collapsing "kiwi" to "kii"); the caret stays at its index.
+    tree.key_nav(widget_kit::NavKey::Delete);
+    assert_eq!(tree.field_text(field), "kii");
+    assert_eq!(tree.field_caret(field), 2);
+    tree.key_nav(widget_kit::NavKey::Home);
+    assert_eq!(tree.field_caret(field), 0);
+    tree.key_nav(widget_kit::NavKey::End);
+    assert_eq!(tree.field_caret(field), 3);
+}
+
+#[test]
 fn paint_tree_produces_opaque_pixels() {
     let mut tree = demo();
     tree.compute(WSize {

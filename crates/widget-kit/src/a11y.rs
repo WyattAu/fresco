@@ -62,6 +62,7 @@ fn walk(
             )
         }
         WidgetKind::Spacer => (A11yRole::Group, String::new(), None, false),
+        WidgetKind::TextField { .. } => (A11yRole::Textbox, String::new(), None, w.focused),
     };
     let states = States {
         focused,

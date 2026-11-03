@@ -1,5 +1,21 @@
 # CHANGELOG
 
+## 0.3.1 (2026-11-03)
+
+Phase 3 continuation.
+
+- `widget-kit`: TextField over ui-text-edit (caret-accurate insert,
+  backspace, delete, Home/End/Left/Right); AccessKit bridge behind the
+  default-off `accesskit` feature (roles, toggled state, text-entry
+  values, update-level focus); widget gallery golden-hash suite (dark,
+  light, high-contrast palettes; alpha and RGB checked apart; strict
+  determinism compare).
+- Facade: `Event::KeyNav` with `NavKey` (Backspace, Delete, arrows,
+  Home, End, Tab, BackTab); winit maps named keys. `NavKey` re-exported
+  through widget-kit.
+- window-kit is now a default-features-off dependency at the workspace
+  level (winit becomes opt-in per consumer).
+
 ## 0.3.0 (2026-11-01)
 
 Phase 3 scaffolding (controls).
