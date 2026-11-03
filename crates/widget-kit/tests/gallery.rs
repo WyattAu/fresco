@@ -187,3 +187,34 @@ fn gallery_bootstraps_baseline_hashes() {
         );
     }
 }
+
+#[test]
+fn label_text_pixels_differ_per_character() {
+    use widget_kit::paint_tree;
+    let make = |text: &str| {
+        let mut tree = WidgetTree::new();
+        let root = tree.push(WidgetKind::Column { gap: 0.0 });
+        let label = tree.push(WidgetKind::Label {
+            text: text.to_string(),
+            px_size: 20.0,
+        });
+        tree.add_child(root, label);
+        tree.compute(widget_kit::Size2D {
+            width: 80.0,
+            height: 24.0,
+        });
+        let mut s = paint_kit::Surface::new(80, 24).unwrap_or_default();
+        let mut painter = paint_kit::Painter::default();
+        paint_tree(&tree, &mut s, &mut painter, &WidgetColors::default());
+        s
+    };
+    let a = make("A");
+    let b = make("B");
+    let c = make("C");
+    assert_ne!(a.data(), b.data(), "A and B must differ");
+    assert_ne!(a.data(), c.data(), "A and C must differ");
+    assert_ne!(b.data(), c.data(), "B and C must differ");
+    // Blank differs from any character.
+    let blank = make(" ");
+    assert_ne!(a.data(), blank.data());
+}

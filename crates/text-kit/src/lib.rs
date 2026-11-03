@@ -19,12 +19,14 @@
 
 pub mod atlas;
 pub mod fake;
+pub mod microfont;
 
 #[cfg(feature = "parley")]
 pub mod parley_backend;
 
 pub use atlas::{GlyphAtlas, GlyphBitmap, GlyphKey, GlyphRasterizer};
 pub use fake::FakeEngine;
+pub use microfont::{micro_bitmap, micro_coverage, micro_glyph_id};
 
 use std::ops::Range;
 

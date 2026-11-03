@@ -168,6 +168,12 @@ A lower layer must never name a higher layer's types.
 - REQ-K11 (tabs): TabList click cycles the active tab; focused
   Left/Right steps with wrap; the active tab name surfaces in a11y.
   Oracle: `cargo test -p widget-kit --test scroll_tabs tab_list`.
+- REQ-K12 (text): labels render per-character micro-font glyphs, not
+  placeholder boxes; distinct characters produce distinct pixels.
+  Oracle: `cargo test -p widget-kit --test gallery label_text_pixels`.
+- REQ-T5 (micro-font): the 3×5 micro-font covers all printable ASCII,
+  is deterministic, and scales by integer factors.
+  Oracle: `cargo test -p text-kit microfont`.
 
 ## 5. Coverage tier
 
