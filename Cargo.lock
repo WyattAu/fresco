@@ -89,10 +89,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4b46cbb362ab8752921c97e041f5e366ee6297bd428a31275b9fcf1e380f7299"
 
 [[package]]
-name = "anim-kit"
-version = "0.3.1"
-
-[[package]]
 name = "anstyle"
 version = "1.0.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -612,6 +608,67 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "aa9a19cbb55df58761df49b23516a86d432839add4af60fc256da840f66ed35b"
 
 [[package]]
+name = "fresco-anim-kit"
+version = "0.3.1"
+
+[[package]]
+name = "fresco-layout-kit"
+version = "0.3.1"
+dependencies = [
+ "taffy",
+]
+
+[[package]]
+name = "fresco-paint-kit"
+version = "0.3.1"
+dependencies = [
+ "fresco-path-kit",
+]
+
+[[package]]
+name = "fresco-path-kit"
+version = "0.3.1"
+dependencies = [
+ "criterion",
+]
+
+[[package]]
+name = "fresco-scene-kit"
+version = "0.3.1"
+dependencies = [
+ "fresco-path-kit",
+]
+
+[[package]]
+name = "fresco-text-kit"
+version = "0.3.1"
+dependencies = [
+ "parley",
+]
+
+[[package]]
+name = "fresco-widget-kit"
+version = "0.3.1"
+dependencies = [
+ "a11y-kit",
+ "accesskit",
+ "fresco-layout-kit",
+ "fresco-paint-kit",
+ "fresco-text-kit",
+ "fresco-window-kit",
+ "render-conformance",
+ "ui-text-edit",
+]
+
+[[package]]
+name = "fresco-window-kit"
+version = "0.3.1"
+dependencies = [
+ "softbuffer",
+ "winit",
+]
+
+[[package]]
 name = "futures-core"
 version = "0.3.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -953,13 +1010,6 @@ dependencies = [
  "cfg-if",
  "futures-util",
  "wasm-bindgen",
-]
-
-[[package]]
-name = "layout-kit"
-version = "0.3.1"
-dependencies = [
- "taffy",
 ]
 
 [[package]]
@@ -1404,13 +1454,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "paint-kit"
-version = "0.3.1"
-dependencies = [
- "path-kit",
-]
-
-[[package]]
 name = "parlance"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1464,13 +1507,6 @@ dependencies = [
  "parley_data",
  "parley_emoji",
  "skrifa",
-]
-
-[[package]]
-name = "path-kit"
-version = "0.3.1"
-dependencies = [
- "criterion",
 ]
 
 [[package]]
@@ -1715,8 +1751,8 @@ checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 name = "render-conformance"
 version = "0.3.1"
 dependencies = [
- "paint-kit",
- "path-kit",
+ "fresco-paint-kit",
+ "fresco-path-kit",
 ]
 
 [[package]]
@@ -1767,13 +1803,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "93fc1dc3aaa9bfed95e02e6eadabb4baf7e3078b0bd1b4d7b6b0b68378900502"
 dependencies = [
  "winapi-util",
-]
-
-[[package]]
-name = "scene-kit"
-version = "0.3.1"
-dependencies = [
- "path-kit",
 ]
 
 [[package]]
@@ -2018,13 +2047,6 @@ dependencies = [
  "grid",
  "serde",
  "slotmap",
-]
-
-[[package]]
-name = "text-kit"
-version = "0.3.1"
-dependencies = [
- "parley",
 ]
 
 [[package]]
@@ -2439,34 +2461,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "widget-kit"
-version = "0.3.1"
-dependencies = [
- "a11y-kit",
- "accesskit",
- "layout-kit",
- "paint-kit",
- "render-conformance",
- "text-kit",
- "ui-text-edit",
- "window-kit",
-]
-
-[[package]]
 name = "winapi-util"
 version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
  "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "window-kit"
-version = "0.3.1"
-dependencies = [
- "softbuffer",
- "winit",
 ]
 
 [[package]]
