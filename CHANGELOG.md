@@ -1,5 +1,18 @@
 # CHANGELOG
 
+## 0.3.6 (2026-11-04)
+
+Phase 3.4 close: per-widget CVD verification.
+
+- `theme_gallery`: widget_states_stay_distinct_under_cvd_variants -
+  checkbox checked/unchecked, button focus ring, tree selection, and
+  the active-tab marker each stay pixel-distinct under protanopia,
+  deuteranopia, and tritanopia simulations. This is the roadmap 3.4
+  claim: CVD variants verified per widget, not just per palette.
+- `DrawListPainter::tab_strip` implemented (strip fill, per-tab boxes,
+  active-tab fill + text-color underline marker, focus border); TabList
+  previously rendered nothing through the stock painter.
+
 ## 0.3.5 (2026-11-04)
 
 Phase 3: tree-lite widget.

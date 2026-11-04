@@ -49,6 +49,11 @@ Phase 2 earns it.
   click select + toggle, visible-row keyboard nav, Left/Right
   collapse/expand, a11y List + selected name). NavKey gained Up/Down.
   Gallery includes the tree (hashes re-bootstrapped). 158 tests green.
+- 2026-11-04: Phase 3.4 closed (0.3.6): per-widget CVD verification -
+  checkbox state, focus ring, tree selection, and active-tab marker
+  each pixel-distinct under protanopia/deuteranopia/tritanopia; stock
+  tab_strip implemented (TabList rendered nothing before). Phase 3
+  headless items complete; kestrel-gui alpha (Phase 2.4) remains.
 
 ## 3. Phases
 

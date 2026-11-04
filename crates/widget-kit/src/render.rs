@@ -206,6 +206,53 @@ impl WidgetRenderer for DrawListPainter<'_> {
         }
     }
 
+    fn tab_strip(
+        &mut self,
+        rect: Rect2D,
+        tabs: &[String],
+        active: usize,
+        colors: &WidgetColors,
+        focused: bool,
+    ) {
+        // Strip background, then one box per tab; the active tab gets
+        // the button fill plus an underline marker in the text color so
+        // the active state survives CVD simulation and greyscale.
+        self.fill(rect, colors.checkbox_box);
+        let count = tabs.len().max(1);
+        let tab_w = rect.width / f64::from(u16::try_from(count).unwrap_or(u16::MAX));
+        for (i, name) in tabs.iter().enumerate() {
+            let i_f = f64::from(u16::try_from(i).unwrap_or(u16::MAX));
+            let tr = Rect2D {
+                x: rect.x + i_f * tab_w,
+                y: rect.y,
+                width: tab_w,
+                height: rect.height,
+            };
+            if i == active {
+                self.fill(tr, colors.button);
+                self.fill(
+                    Rect2D {
+                        x: tr.x,
+                        y: tr.y + tr.height - 2.0,
+                        width: tr.width,
+                        height: 2.0,
+                    },
+                    colors.text,
+                );
+            }
+            let label_rect = Rect2D {
+                x: tr.x + 4.0,
+                y: tr.y,
+                width: (tr.width - 8.0).max(0.0),
+                height: tr.height,
+            };
+            self.label_text(label_rect, name, 13.0, colors.text);
+        }
+        if focused {
+            self.border(rect, 1.0, colors.focus_ring);
+        }
+    }
+
     fn tree_list(
         &mut self,
         rect: Rect2D,

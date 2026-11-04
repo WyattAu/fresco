@@ -223,3 +223,149 @@ fn themed_variants_differ_and_cover_pixels() {
         let _ = name;
     }
 }
+
+#[test]
+fn widget_states_stay_distinct_under_cvd_variants() {
+    use widget_kit::theme::variant_colors;
+    use widget_kit::{Size2D, TreeItem};
+
+    let seed = seed_graph();
+    let cases = [
+        ("protanopia", color_kit::CvdKind::Protanopia),
+        ("deuteranopia", color_kit::CvdKind::Deuteranopia),
+        ("tritanopia", color_kit::CvdKind::Tritanopia),
+    ];
+    let rgb_hash = |s: &Surface| -> u64 {
+        let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+        for (i, b) in s.data().iter().enumerate() {
+            if i % 4 != 3 {
+                h ^= u64::from(*b);
+                h = h.wrapping_mul(0x0100_0000_01b3);
+            }
+        }
+        h
+    };
+    let paint = |colors: &WidgetColors, tree: &WidgetTree| {
+        let mut surface = Surface::new(220, 110).unwrap_or_else(|| {
+            Surface::with_stride(1, 1, 4).unwrap_or_else(|| {
+                Surface::new(1, 1).unwrap_or_else(|| unreachable!("1x1 surface cannot overflow"))
+            })
+        });
+        let mut painter = Painter::default();
+        paint_tree(tree, &mut surface, &mut painter, colors);
+        rgb_hash(&surface)
+    };
+
+    for (name, kind) in cases {
+        let Ok(colors) = variant_colors(&seed, Variant::Cvd(kind)) else {
+            panic_missing_variant(name);
+        };
+
+        // Checkbox: checked vs unchecked must read differently.
+        let checkbox = |checked: bool| {
+            let mut tree = WidgetTree::new();
+            let root = tree.push(WidgetKind::Column { gap: 0.0 });
+            let cb = tree.push(WidgetKind::Checkbox {
+                label: "Compact".to_string(),
+                checked,
+            });
+            tree.add_child(root, cb);
+            tree.compute(Size2D {
+                width: 220.0,
+                height: 110.0,
+            });
+            tree
+        };
+        assert_ne!(
+            paint(&colors, &checkbox(true)),
+            paint(&colors, &checkbox(false)),
+            "checked vs unchecked must differ under cvd {name}"
+        );
+
+        // Button: the focus ring must survive the simulation.
+        let focused_button = |focused: bool| {
+            let mut tree = WidgetTree::new();
+            let root = tree.push(WidgetKind::Column { gap: 0.0 });
+            let btn = tree.push(WidgetKind::Button {
+                label: "Compose".to_string(),
+                action: 1,
+            });
+            tree.add_child(root, btn);
+            tree.compute(Size2D {
+                width: 220.0,
+                height: 110.0,
+            });
+            if focused {
+                tree.set_focus(Some(btn));
+            }
+            tree
+        };
+        assert_ne!(
+            paint(&colors, &focused_button(true)),
+            paint(&colors, &focused_button(false)),
+            "focus ring must survive cvd {name}"
+        );
+
+        // TreeList: selection highlight must survive the simulation.
+        let tree_sel = |selected: usize| {
+            let mut tree = WidgetTree::new();
+            let root = tree.push(WidgetKind::Column { gap: 0.0 });
+            let list = tree.push(WidgetKind::TreeList {
+                items: vec![
+                    TreeItem {
+                        label: "Projects".to_string(),
+                        depth: 0,
+                        has_children: true,
+                        expanded: true,
+                    },
+                    TreeItem {
+                        label: "fresco".to_string(),
+                        depth: 1,
+                        has_children: false,
+                        expanded: false,
+                    },
+                ],
+                selected,
+            });
+            tree.add_child(root, list);
+            tree.compute(Size2D {
+                width: 220.0,
+                height: 110.0,
+            });
+            tree
+        };
+        assert_ne!(
+            paint(&colors, &tree_sel(0)),
+            paint(&colors, &tree_sel(1)),
+            "tree selection must survive cvd {name}"
+        );
+
+        // TabList: the active tab marker must survive the simulation.
+        let tabs_active = |active: usize| {
+            let mut tree = WidgetTree::new();
+            let root = tree.push(WidgetKind::Column { gap: 0.0 });
+            let tabs = tree.push(WidgetKind::TabList {
+                tabs: vec!["Read".to_string(), "Sent".to_string()],
+                active,
+            });
+            tree.add_child(root, tabs);
+            tree.compute(Size2D {
+                width: 220.0,
+                height: 110.0,
+            });
+            tree
+        };
+        assert_ne!(
+            paint(&colors, &tabs_active(0)),
+            paint(&colors, &tabs_active(1)),
+            "active tab must survive cvd {name}"
+        );
+    }
+}
+
+/// `panic!` lives in a helper so the deny(panic) lint stays satisfied
+/// while the failure message keeps the variant name.
+#[allow(clippy::panic)]
+fn panic_missing_variant(name: &str) -> ! {
+    panic!("cvd {name} derive failed")
+}
