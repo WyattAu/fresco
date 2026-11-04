@@ -4,7 +4,7 @@
 //! paint-kit directly. Label text pixels are a placeholder box in the
 //! stock renderer (documented limitation): the consumer wires the
 //! text-kit glyph path through this same trait at integration
-//! (kestrel implements `label_box` with real glyphs).
+//! (kestrel overrides `label_text` with real font glyphs).
 
 use crate::{WidgetKind, WidgetRef, WidgetTree};
 use layout_kit::engine::Rect2D;
@@ -341,7 +341,9 @@ fn paint_node(
     };
     let is_scroll = matches!(&w.kind, WidgetKind::ScrollPane { .. });
     match &w.kind {
-        WidgetKind::Label { .. } => renderer.label_box(rect, colors.text),
+        WidgetKind::Label { text, px_size } => {
+            renderer.label_text(rect, text, *px_size, colors.text);
+        }
         WidgetKind::Button { .. } => {
             renderer.button_frame(rect, colors, w.focused, w.pressed);
         }

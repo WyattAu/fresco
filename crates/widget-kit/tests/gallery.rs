@@ -123,11 +123,11 @@ fn baselines() -> Vec<(&'static str, u64, u64)> {
 // Baseline hashes are filled in by the bootstrap test below; the table
 // goes green after the first local run records them.
 const GOLDEN_DARK_ALPHA: u64 = 0xdd50_b1ad_2cb8_384d;
-const GOLDEN_DARK_RGB: u64 = 0x8b88_20b0_6eca_8e32;
+const GOLDEN_DARK_RGB: u64 = 0x74ea_8e3a_77a9_5f62;
 const GOLDEN_LIGHT_ALPHA: u64 = 0xdd50_b1ad_2cb8_384d;
-const GOLDEN_LIGHT_RGB: u64 = 0x6d47_dd04_0ea3_219a;
+const GOLDEN_LIGHT_RGB: u64 = 0x9414_6c8b_cf95_30d4;
 const GOLDEN_HC_ALPHA: u64 = 0xdd50_b1ad_2cb8_384d;
-const GOLDEN_HC_RGB: u64 = 0x3552_f807_95e9_eda8;
+const GOLDEN_HC_RGB: u64 = 0x35a5_fa1a_e7e9_0782;
 
 #[test]
 fn gallery_is_deterministic() {
@@ -208,13 +208,23 @@ fn label_text_pixels_differ_per_character() {
         paint_tree(&tree, &mut s, &mut painter, &WidgetColors::default());
         s
     };
+    // Compare via FNV-1a so a failure reports one hash per surface
+    // instead of dumping the full pixel buffer.
+    let hash = |surface: &paint_kit::Surface| -> u64 {
+        let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+        for byte in surface.data() {
+            h ^= u64::from(*byte);
+            h = h.wrapping_mul(0x0100_0000_01b3);
+        }
+        h
+    };
     let a = make("A");
     let b = make("B");
     let c = make("C");
-    assert_ne!(a.data(), b.data(), "A and B must differ");
-    assert_ne!(a.data(), c.data(), "A and C must differ");
-    assert_ne!(b.data(), c.data(), "B and C must differ");
+    assert_ne!(hash(&a), hash(&b), "A and B pixels must differ");
+    assert_ne!(hash(&a), hash(&c), "A and C pixels must differ");
+    assert_ne!(hash(&b), hash(&c), "B and C pixels must differ");
     // Blank differs from any character.
     let blank = make(" ");
-    assert_ne!(a.data(), blank.data());
+    assert_ne!(hash(&a), hash(&blank), "text must differ from blank");
 }
