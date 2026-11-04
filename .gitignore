@@ -7,3 +7,4 @@ Cargo.lock.bak
 coverage/
 *.lcov
 *.lcinfo
+.cargo/
