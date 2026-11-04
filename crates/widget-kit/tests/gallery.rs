@@ -8,7 +8,7 @@
 //! why in the changelog).
 
 use paint_kit::{Painter, Surface};
-use widget_kit::{LogicalAt, Size2D, WidgetColors, WidgetKind, WidgetTree, paint_tree};
+use widget_kit::{LogicalAt, Size2D, TreeItem, WidgetColors, WidgetKind, WidgetTree, paint_tree};
 
 /// Palettes: dark default, light, high contrast.
 fn palette(name: &str) -> WidgetColors {
@@ -65,6 +65,30 @@ fn gallery_tree() -> WidgetTree {
     tree.add_child(row, checkbox);
     tree.add_child(row, field);
     tree.add_child(root, spacer);
+    let outline = tree.push(WidgetKind::TreeList {
+        items: vec![
+            TreeItem {
+                label: "Projects".to_string(),
+                depth: 0,
+                has_children: true,
+                expanded: true,
+            },
+            TreeItem {
+                label: "fresco".to_string(),
+                depth: 1,
+                has_children: false,
+                expanded: false,
+            },
+            TreeItem {
+                label: "Archive".to_string(),
+                depth: 0,
+                has_children: true,
+                expanded: false,
+            },
+        ],
+        selected: 1,
+    });
+    tree.add_child(root, outline);
     // Interaction state: focused button, pressed checkbox, typed text.
     tree.set_focus(Some(button));
     tree.compute(Size2D {
@@ -123,11 +147,11 @@ fn baselines() -> Vec<(&'static str, u64, u64)> {
 // Baseline hashes are filled in by the bootstrap test below; the table
 // goes green after the first local run records them.
 const GOLDEN_DARK_ALPHA: u64 = 0xdd50_b1ad_2cb8_384d;
-const GOLDEN_DARK_RGB: u64 = 0x74ea_8e3a_77a9_5f62;
+const GOLDEN_DARK_RGB: u64 = 0xea3a_80db_5b09_ae80;
 const GOLDEN_LIGHT_ALPHA: u64 = 0xdd50_b1ad_2cb8_384d;
-const GOLDEN_LIGHT_RGB: u64 = 0x9414_6c8b_cf95_30d4;
+const GOLDEN_LIGHT_RGB: u64 = 0x47ff_725b_8175_dd4c;
 const GOLDEN_HC_ALPHA: u64 = 0xdd50_b1ad_2cb8_384d;
-const GOLDEN_HC_RGB: u64 = 0x35a5_fa1a_e7e9_0782;
+const GOLDEN_HC_RGB: u64 = 0x4827_c00d_cc84_1cd3;
 
 #[test]
 fn gallery_is_deterministic() {

@@ -1,6 +1,19 @@
 # CHANGELOG
 
-## 0.3.3a (2026-11-03)
+## 0.3.5 (2026-11-04)
+
+Phase 3: tree-lite widget.
+
+- `widget-kit`: `TreeList` — flat rows with depth and expand state;
+  visibility derived (a row shows only when every ancestor is
+  expanded), so collapsed subtrees vanish from rendering, hit testing,
+  and keyboard selection alike. Click selects + toggles (empty space
+  does nothing); Up/Down step visible rows, Left/Right collapse/expand
+  (Left on a leaf climbs to the ancestor). `NavKey::Up`/`Down` added in
+  `window-kit`. A11y emits `List` with the selected row name. Gallery
+  includes the tree; golden hashes re-bootstrapped. 8 tree tests.
+
+## 0.3.4 (2026-11-03)
 
 Phase 3: text rendering path.
 

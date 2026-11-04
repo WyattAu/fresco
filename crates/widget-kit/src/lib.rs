@@ -109,6 +109,59 @@ pub enum WidgetKind {
         /// Active tab index.
         active: usize,
     },
+    /// Collapsible outline: flat rows with depth and expand state.
+    /// Click selects + toggles; Up/Down move selection among visible
+    /// rows; Left/Right collapse/expand.
+    TreeList {
+        /// Rows in display order (ancestors before descendants).
+        items: Vec<TreeItem>,
+        /// Selected row index (an index into `items`).
+        selected: usize,
+    },
+}
+
+/// One row of a [`WidgetKind::TreeList`]: label, nesting depth, and
+/// expand state. Rows are stored flat; visibility (which rows render,
+/// hit-test, and take keyboard selection) is derived: a row is visible
+/// when every ancestor is expanded.
+#[derive(Clone, Debug)]
+pub struct TreeItem {
+    /// Row text.
+    pub label: String,
+    /// Nesting depth (0 = top level).
+    pub depth: usize,
+    /// Children can exist under this row (expand marker shown).
+    pub has_children: bool,
+    /// Expanded state (meaningless without `has_children`).
+    pub expanded: bool,
+}
+
+/// Row height of a [`WidgetKind::TreeList`].
+pub const TREE_ROW_H: f64 = 24.0;
+
+/// Per-depth indent of a [`WidgetKind::TreeList`] row.
+pub const TREE_INDENT: f64 = 16.0;
+
+/// Indexes of the visible rows of `items`: a row is visible when every
+/// ancestor is expanded. Collapsed subtrees vanish from rendering, hit
+/// testing, and keyboard selection alike.
+#[must_use]
+pub fn tree_visible_rows(items: &[TreeItem]) -> std::vec::Vec<usize> {
+    let mut out = std::vec::Vec::new();
+    let mut hide_from: Option<usize> = None;
+    for (i, item) in items.iter().enumerate() {
+        if let Some(d) = hide_from {
+            if item.depth > d {
+                continue;
+            }
+            hide_from = None;
+        }
+        out.push(i);
+        if item.has_children && !item.expanded {
+            hide_from = Some(item.depth);
+        }
+    }
+    out
 }
 
 /// Widget state: kind plus geometry and interaction flags.
@@ -148,7 +201,7 @@ impl Widget {
     pub fn is_focusable(&self) -> bool {
         matches!(
             self.kind,
-            WidgetKind::Button { .. } | WidgetKind::Checkbox { .. }
+            WidgetKind::Button { .. } | WidgetKind::Checkbox { .. } | WidgetKind::TreeList { .. }
         )
     }
 
@@ -306,6 +359,15 @@ impl WidgetTree {
                     ..NodeStyle::default()
                 };
             }
+            WidgetKind::TreeList { items, .. } => {
+                let visible = tree_visible_rows(items).len().max(1);
+                let h = f64::from(u16::try_from(visible).unwrap_or(u16::MAX)) * TREE_ROW_H;
+                return NodeStyle {
+                    height: w.fixed_height.or(Some(h)),
+                    grow: w.grow,
+                    ..NodeStyle::default()
+                };
+            }
             _ => NodeStyle::default(),
         };
         style.width = w.fixed_width;
@@ -356,6 +418,12 @@ impl WidgetTree {
             Some(WidgetKind::TabList { tabs, active }) => {
                 Some(tabs.get(*active).cloned().unwrap_or_default())
             }
+            Some(WidgetKind::TreeList { items, selected }) => Some(
+                items
+                    .get(*selected)
+                    .map(|i| i.label.clone())
+                    .unwrap_or_default(),
+            ),
             _ => None,
         }
     }
@@ -474,7 +542,7 @@ impl WidgetTree {
         if let (Some(p), Some(r)) = (press_target, release_target)
             && p == r
         {
-            self.activate(r);
+            self.activate_at(r, at);
         }
         for w in &mut self.widgets {
             w.pressed = false;
@@ -527,6 +595,8 @@ impl WidgetTree {
                         self.field_move(f, -1);
                     } else if self.kind_is_tab_list(f) {
                         self.tab_step(f, -1);
+                    } else if self.kind_is_tree_list(f) {
+                        self.tree_collapse(f);
                     }
                 }
             }
@@ -536,7 +606,23 @@ impl WidgetTree {
                         self.field_move(f, 1);
                     } else if self.kind_is_tab_list(f) {
                         self.tab_step(f, 1);
+                    } else if self.kind_is_tree_list(f) {
+                        self.tree_expand(f);
                     }
+                }
+            }
+            NavKey::Up => {
+                if let Some(f) = self.focus
+                    && self.kind_is_tree_list(f)
+                {
+                    self.tree_step(f, -1);
+                }
+            }
+            NavKey::Down => {
+                if let Some(f) = self.focus
+                    && self.kind_is_tree_list(f)
+                {
+                    self.tree_step(f, 1);
                 }
             }
             NavKey::Home => {
@@ -571,6 +657,164 @@ impl WidgetTree {
             self.widgets.get(r.0).map(|w| &w.kind),
             Some(WidgetKind::TabList { .. })
         )
+    }
+
+    fn kind_is_tree_list(&self, r: WidgetRef) -> bool {
+        matches!(
+            self.widgets.get(r.0).map(|w| &w.kind),
+            Some(WidgetKind::TreeList { .. })
+        )
+    }
+
+    /// Pointer activation: TreeList selects the clicked visible row and
+    /// toggles it when it has children (clicks on empty space below the
+    /// rows do nothing); everything else defers to `activate`.
+    pub fn activate_at(&mut self, r: WidgetRef, at: LogicalAt) {
+        let list = match self.widgets.get(r.0).map(|w| &w.kind) {
+            Some(WidgetKind::TreeList { items, .. }) => {
+                let visible = tree_visible_rows(items);
+                let rel = at.y - self.widgets.get(r.0).map_or(0.0, |w| w.rect.y);
+                if rel < 0.0 {
+                    return;
+                }
+                visible.get((rel / TREE_ROW_H) as usize).copied()
+            }
+            _ => None,
+        };
+        if self.kind_is_tree_list(r) {
+            let Some(row) = list else {
+                return;
+            };
+            if let Some(Widget {
+                kind: WidgetKind::TreeList { items, selected },
+                ..
+            }) = self.widgets.get_mut(r.0)
+                && items.get(row).is_some()
+            {
+                *selected = row;
+                if let Some(item) = items.get_mut(row)
+                    && item.has_children
+                {
+                    item.expanded = !item.expanded;
+                }
+            }
+            return;
+        }
+        self.activate(r);
+    }
+
+    /// Move the selection of a focused TreeList among visible rows
+    /// (wrapping). Collapsed descendants are skipped.
+    pub fn tree_step(&mut self, r: WidgetRef, delta: i32) {
+        let Some(Widget {
+            kind: WidgetKind::TreeList { items, selected },
+            ..
+        }) = self.widgets.get_mut(r.0)
+        else {
+            return;
+        };
+        let visible = tree_visible_rows(items);
+        if visible.is_empty() {
+            return;
+        }
+        let pos = visible.iter().position(|v| *v == *selected).unwrap_or(0);
+        let n = visible.len() as i32;
+        let next = ((pos as i32) + delta).rem_euclid(n) as usize;
+        *selected = visible.get(next).copied().unwrap_or(*selected);
+    }
+
+    /// Collapse the selected row; already-collapsed (or leaf) rows move
+    /// selection to the nearest ancestor instead.
+    pub fn tree_collapse(&mut self, r: WidgetRef) {
+        let Some(Widget {
+            kind: WidgetKind::TreeList { items, selected },
+            ..
+        }) = self.widgets.get_mut(r.0)
+        else {
+            return;
+        };
+        let Some(item) = items.get_mut(*selected) else {
+            return;
+        };
+        if item.has_children && item.expanded {
+            item.expanded = false;
+            return;
+        }
+        let depth = item.depth;
+        let mut i = *selected;
+        while i > 0 {
+            i -= 1;
+            if items.get(i).is_some_and(|p| p.depth < depth) {
+                *selected = i;
+                return;
+            }
+        }
+    }
+
+    /// Expand the selected row; already-expanded (or leaf) rows move
+    /// selection to the first child (the next row) instead.
+    pub fn tree_expand(&mut self, r: WidgetRef) {
+        let Some(Widget {
+            kind: WidgetKind::TreeList { items, selected },
+            ..
+        }) = self.widgets.get_mut(r.0)
+        else {
+            return;
+        };
+        if let Some(item) = items.get_mut(*selected)
+            && item.has_children
+            && !item.expanded
+        {
+            item.expanded = true;
+            return;
+        }
+        let depth = items.get(*selected).map_or(0, |i| i.depth);
+        let Some(next) = items.get(*selected + 1) else {
+            return;
+        };
+        if next.depth > depth {
+            *selected += 1;
+        }
+    }
+
+    /// Selected row index of a TreeList.
+    #[must_use]
+    pub fn tree_selected(&self, r: WidgetRef) -> Option<usize> {
+        match self.widgets.get(r.0).map(|w| &w.kind) {
+            Some(WidgetKind::TreeList { selected, .. }) => Some(*selected),
+            _ => None,
+        }
+    }
+
+    /// Selected row label of a TreeList.
+    #[must_use]
+    pub fn tree_selected_label(&self, r: WidgetRef) -> Option<String> {
+        match self.widgets.get(r.0).map(|w| &w.kind) {
+            Some(WidgetKind::TreeList { items, selected }) => {
+                items.get(*selected).map(|i| i.label.clone())
+            }
+            _ => None,
+        }
+    }
+
+    /// Toggle the expanded state of row `row` and select it (no-op for
+    /// leaves).
+    pub fn tree_toggle(&mut self, r: WidgetRef, row: usize) {
+        let Some(Widget {
+            kind: WidgetKind::TreeList { items, selected },
+            ..
+        }) = self.widgets.get_mut(r.0)
+        else {
+            return;
+        };
+        if let Some(item) = items.get_mut(row)
+            && item.has_children
+        {
+            item.expanded = !item.expanded;
+        }
+        if items.get(row).is_some() {
+            *selected = row;
+        }
     }
 
     /// Move the active tab of a TabList by `delta` (wrapping).
@@ -757,6 +1001,13 @@ impl WidgetTree {
             }
             WidgetKind::TabList { tabs, active } if !tabs.is_empty() => {
                 *active = ((*active as i32) + 1).rem_euclid(tabs.len() as i32) as usize;
+            }
+            WidgetKind::TreeList { items, selected } => {
+                if let Some(item) = items.get_mut(*selected)
+                    && item.has_children
+                {
+                    item.expanded = !item.expanded;
+                }
             }
             _ => {}
         }

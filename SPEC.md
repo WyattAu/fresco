@@ -174,6 +174,11 @@ A lower layer must never name a higher layer's types.
 - REQ-T5 (micro-font): the 3×5 micro-font covers all printable ASCII,
   is deterministic, and scales by integer factors.
   Oracle: `cargo test -p text-kit microfont`.
+- REQ-K13 (tree): TreeList visibility is derived (collapsed subtrees
+  vanish from render, hit test, and keyboard selection); click selects
+  and toggles, empty space does nothing; Up/Down step visible rows,
+  Left/Right collapse/expand; the a11y name follows the selection.
+  Oracle: `cargo test -p widget-kit --test tree`.
 
 ## 5. Coverage tier
 

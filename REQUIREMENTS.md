@@ -94,6 +94,8 @@ Traceability for the fresco engine. REQ identifiers match `SPEC.md` section
 - REQ-K12 labels render readable micro-font glyphs (no placeholder
   boxes).
 - REQ-T5 text-kit micro-font covers printable ASCII, is deterministic.
+- REQ-K13 TreeList: derived visibility, click select + toggle, visible-
+  row keyboard nav, a11y selection.
 
 ## R11 Process
 

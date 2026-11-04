@@ -56,6 +56,19 @@ pub trait WidgetRenderer {
     ) {
         let _ = (rect, tabs, active, colors, focused);
     }
+
+    /// Tree rows: one row per visible item, selection highlight,
+    /// expand markers, focus border.
+    fn tree_list(
+        &mut self,
+        rect: Rect2D,
+        items: &[crate::TreeItem],
+        selected: usize,
+        colors: &WidgetColors,
+        focused: bool,
+    ) {
+        let _ = (rect, items, selected, colors, focused);
+    }
 }
 
 /// Default palette (neutral dark); callers override with theme-kit
@@ -190,6 +203,49 @@ impl WidgetRenderer for DrawListPainter<'_> {
                 }
             }
             pen_x += advance;
+        }
+    }
+
+    fn tree_list(
+        &mut self,
+        rect: Rect2D,
+        items: &[crate::TreeItem],
+        selected: usize,
+        colors: &WidgetColors,
+        focused: bool,
+    ) {
+        for (pos, idx) in crate::tree_visible_rows(items).into_iter().enumerate() {
+            let Some(item) = items.get(idx) else {
+                continue;
+            };
+            let y = rect.y + f64::from(u32::try_from(pos).unwrap_or(u32::MAX)) * crate::TREE_ROW_H;
+            let row = Rect2D {
+                x: rect.x,
+                y,
+                width: rect.width,
+                height: crate::TREE_ROW_H,
+            };
+            if pos == selected {
+                self.fill(row, colors.button);
+            }
+            let marker = if item.has_children {
+                if item.expanded { "- " } else { "+ " }
+            } else {
+                "  "
+            };
+            let indent =
+                4.0 + f64::from(u32::try_from(item.depth).unwrap_or(u32::MAX)) * crate::TREE_INDENT;
+            let label_rect = Rect2D {
+                x: row.x + indent,
+                y: row.y,
+                width: (row.width - indent).max(0.0),
+                height: row.height,
+            };
+            let text = format!("{marker}{}", item.label);
+            self.label_text(label_rect, &text, 14.0, colors.text);
+        }
+        if focused {
+            self.border(rect, 1.0, colors.focus_ring);
         }
     }
 
@@ -364,6 +420,9 @@ fn paint_node(
         }
         WidgetKind::TabList { tabs, active } => {
             renderer.tab_strip(rect, tabs, *active, colors, w.focused);
+        }
+        WidgetKind::TreeList { items, selected } => {
+            renderer.tree_list(rect, items, *selected, colors, w.focused);
         }
         WidgetKind::Row { .. } | WidgetKind::Column { .. } | WidgetKind::Spacer => {}
     }

@@ -36,6 +36,19 @@ Phase 2 earns it.
   Phase 2.3 raster breadth landed (linear/radial gradients, clip stack,
   nearest-neighbor image blits). 124 tests green. Phase 2.4 (kestrel
   alpha) and 2.5 (estate.yml registration) remain.
+- 2026-11-03: Phase 3 landed in steps (0.3.0-0.3.3): layout-engine
+  contract (FlowEngine + Taffy feature), widget-kit retained-props
+  spike (hit testing, focus chain 876, activation 875, a11y
+  emission), TextField over ui-text-edit, AccessKit bridge, theme-kit
+  styling resolver with audited CVD gallery, ScrollPane, TabList.
+- 2026-11-03: text rendering path (0.3.4): 3x5 micro-font in text-kit
+  (all printable ASCII, deterministic), `label_text` blits
+  per-character glyphs - labels show distinguishable characters
+  instead of placeholder boxes.
+- 2026-11-04: tree-lite widget (0.3.5): TreeList (derived visibility,
+  click select + toggle, visible-row keyboard nav, Left/Right
+  collapse/expand, a11y List + selected name). NavKey gained Up/Down.
+  Gallery includes the tree (hashes re-bootstrapped). 158 tests green.
 
 ## 3. Phases
 

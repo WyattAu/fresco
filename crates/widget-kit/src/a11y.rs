@@ -69,6 +69,15 @@ fn walk(
             None,
             w.focused,
         ),
+        WidgetKind::TreeList { items, selected } => (
+            A11yRole::List,
+            items
+                .get(*selected)
+                .map(|i| i.label.clone())
+                .unwrap_or_default(),
+            None,
+            w.focused,
+        ),
         WidgetKind::TextField { .. } => (A11yRole::Textbox, String::new(), None, w.focused),
     };
     let states = States {

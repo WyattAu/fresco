@@ -83,6 +83,10 @@ pub enum NavKey {
     Tab,
     /// Focus the previous focusable widget.
     BackTab,
+    /// Selection one row up.
+    Up,
+    /// Selection one row down.
+    Down,
 }
 
 /// Physical pixel size.
