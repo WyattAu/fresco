@@ -69,6 +69,14 @@ fn walk(
             None,
             w.focused,
         ),
+        WidgetKind::Select {
+            options, selected, ..
+        } => (
+            A11yRole::ComboBox,
+            options.get(*selected).cloned().unwrap_or_default(),
+            None,
+            w.focused,
+        ),
         WidgetKind::TreeList { items, selected } => (
             A11yRole::List,
             items

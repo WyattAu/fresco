@@ -179,6 +179,10 @@ A lower layer must never name a higher layer's types.
   and toggles, empty space does nothing; Up/Down step visible rows,
   Left/Right collapse/expand; the a11y name follows the selection.
   Oracle: `cargo test -p widget-kit --test tree`.
+- REQ-K14 (select): Select opens on header click, commits + closes on
+  an option click, ignores empty space; Up/Down open and step with
+  immediate commit, Enter closes; the a11y name follows the selection.
+  Oracle: `cargo test -p widget-kit --test select`.
 
 ## 5. Coverage tier
 

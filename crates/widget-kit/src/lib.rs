@@ -109,6 +109,18 @@ pub enum WidgetKind {
         /// Active tab index.
         active: usize,
     },
+    /// Dropdown selector: closed shows the selected option; opening
+    /// reveals one row per option. Click opens, click on an option
+    /// commits + closes, click on the header closes. Up/Down (focused)
+    /// open and step the selection with immediate commit; Enter closes.
+    Select {
+        /// Options in order.
+        options: Vec<String>,
+        /// Selected option index.
+        selected: usize,
+        /// Dropdown open state.
+        open: bool,
+    },
     /// Collapsible outline: flat rows with depth and expand state.
     /// Click selects + toggles; Up/Down move selection among visible
     /// rows; Left/Right collapse/expand.
@@ -136,8 +148,12 @@ pub struct TreeItem {
     pub expanded: bool,
 }
 
-/// Row height of a [`WidgetKind::TreeList`].
+/// Row height of a [`WidgetKind::TreeList`] and of a [`WidgetKind::Select`]
+/// option row.
 pub const TREE_ROW_H: f64 = 24.0;
+
+/// Closed header height of a [`WidgetKind::Select`].
+pub const SELECT_HEADER_H: f64 = 26.0;
 
 /// Per-depth indent of a [`WidgetKind::TreeList`] row.
 pub const TREE_INDENT: f64 = 16.0;
@@ -201,7 +217,10 @@ impl Widget {
     pub fn is_focusable(&self) -> bool {
         matches!(
             self.kind,
-            WidgetKind::Button { .. } | WidgetKind::Checkbox { .. } | WidgetKind::TreeList { .. }
+            WidgetKind::Button { .. }
+                | WidgetKind::Checkbox { .. }
+                | WidgetKind::TreeList { .. }
+                | WidgetKind::Select { .. }
         )
     }
 
@@ -368,6 +387,17 @@ impl WidgetTree {
                     ..NodeStyle::default()
                 };
             }
+            WidgetKind::Select { options, open, .. } => {
+                let rows = if *open { options.len() + 1 } else { 1 };
+                let h = SELECT_HEADER_H
+                    + f64::from(u16::try_from(rows.saturating_sub(1)).unwrap_or(u16::MAX))
+                        * TREE_ROW_H;
+                return NodeStyle {
+                    height: w.fixed_height.or(Some(h)),
+                    grow: w.grow,
+                    ..NodeStyle::default()
+                };
+            }
             _ => NodeStyle::default(),
         };
         style.width = w.fixed_width;
@@ -424,6 +454,9 @@ impl WidgetTree {
                     .map(|i| i.label.clone())
                     .unwrap_or_default(),
             ),
+            Some(WidgetKind::Select {
+                options, selected, ..
+            }) => Some(options.get(*selected).cloned().unwrap_or_default()),
             _ => None,
         }
     }
@@ -612,17 +645,21 @@ impl WidgetTree {
                 }
             }
             NavKey::Up => {
-                if let Some(f) = self.focus
-                    && self.kind_is_tree_list(f)
-                {
-                    self.tree_step(f, -1);
+                if let Some(f) = self.focus {
+                    if self.kind_is_tree_list(f) {
+                        self.tree_step(f, -1);
+                    } else if self.kind_is_select(f) {
+                        self.select_step(f, -1);
+                    }
                 }
             }
             NavKey::Down => {
-                if let Some(f) = self.focus
-                    && self.kind_is_tree_list(f)
-                {
-                    self.tree_step(f, 1);
+                if let Some(f) = self.focus {
+                    if self.kind_is_tree_list(f) {
+                        self.tree_step(f, 1);
+                    } else if self.kind_is_select(f) {
+                        self.select_step(f, 1);
+                    }
                 }
             }
             NavKey::Home => {
@@ -666,18 +703,116 @@ impl WidgetTree {
         )
     }
 
+    fn kind_is_select(&self, r: WidgetRef) -> bool {
+        matches!(
+            self.widgets.get(r.0).map(|w| &w.kind),
+            Some(WidgetKind::Select { .. })
+        )
+    }
+
+    /// Open a focused Select (if closed) and step the selection by
+    /// `delta` with immediate commit (wrapping, skipping nothing).
+    pub fn select_step(&mut self, r: WidgetRef, delta: i32) {
+        let Some(Widget {
+            kind:
+                WidgetKind::Select {
+                    options,
+                    selected,
+                    open,
+                },
+            ..
+        }) = self.widgets.get_mut(r.0)
+        else {
+            return;
+        };
+        if options.is_empty() {
+            return;
+        }
+        *open = true;
+        let n = options.len() as i32;
+        *selected = ((*selected as i32) + delta).rem_euclid(n) as usize;
+    }
+
+    /// Selected option index of a Select.
+    #[must_use]
+    pub fn select_selected(&self, r: WidgetRef) -> Option<usize> {
+        match self.widgets.get(r.0).map(|w| &w.kind) {
+            Some(WidgetKind::Select { selected, .. }) => Some(*selected),
+            _ => None,
+        }
+    }
+
+    /// Selected option text of a Select.
+    #[must_use]
+    pub fn select_selected_label(&self, r: WidgetRef) -> Option<String> {
+        match self.widgets.get(r.0).map(|w| &w.kind) {
+            Some(WidgetKind::Select {
+                options, selected, ..
+            }) => options.get(*selected).cloned(),
+            _ => None,
+        }
+    }
+
+    /// Whether a Select is open.
+    #[must_use]
+    pub fn select_is_open(&self, r: WidgetRef) -> Option<bool> {
+        match self.widgets.get(r.0).map(|w| &w.kind) {
+            Some(WidgetKind::Select { open, .. }) => Some(*open),
+            _ => None,
+        }
+    }
+
+    /// Select an option by index and close the dropdown (no-op for an
+    /// out-of-range row).
+    pub fn select_pick(&mut self, r: WidgetRef, row: usize) {
+        let Some(Widget {
+            kind:
+                WidgetKind::Select {
+                    options,
+                    selected,
+                    open,
+                },
+            ..
+        }) = self.widgets.get_mut(r.0)
+        else {
+            return;
+        };
+        if options.get(row).is_some() {
+            *selected = row;
+            *open = false;
+        }
+    }
+
     /// Pointer activation: TreeList selects the clicked visible row and
     /// toggles it when it has children (clicks on empty space below the
-    /// rows do nothing); everything else defers to `activate`.
+    /// rows do nothing); Select opens on a header click and picks +
+    /// closes on an option-row click; everything else defers to
+    /// `activate`.
     pub fn activate_at(&mut self, r: WidgetRef, at: LogicalAt) {
+        let rel = at.y - self.widgets.get(r.0).map_or(0.0, |w| w.rect.y);
         let list = match self.widgets.get(r.0).map(|w| &w.kind) {
             Some(WidgetKind::TreeList { items, .. }) => {
                 let visible = tree_visible_rows(items);
-                let rel = at.y - self.widgets.get(r.0).map_or(0.0, |w| w.rect.y);
                 if rel < 0.0 {
                     return;
                 }
                 visible.get((rel / TREE_ROW_H) as usize).copied()
+            }
+            Some(WidgetKind::Select { options, open, .. }) => {
+                if !*open {
+                    // Header click on a closed dropdown opens it.
+                    return self.select_open(r);
+                }
+                // Open: row 0 is the header (closes); rows below are
+                // options (pick + close).
+                if rel < SELECT_HEADER_H {
+                    return self.activate(r);
+                }
+                let row = ((rel - SELECT_HEADER_H) / TREE_ROW_H) as usize;
+                if row < options.len() {
+                    return self.select_pick(r, row);
+                }
+                return;
             }
             _ => None,
         };
@@ -701,6 +836,17 @@ impl WidgetTree {
             return;
         }
         self.activate(r);
+    }
+
+    /// Open a closed Select (leaves an open one open).
+    fn select_open(&mut self, r: WidgetRef) {
+        if let Some(Widget {
+            kind: WidgetKind::Select { open, .. },
+            ..
+        }) = self.widgets.get_mut(r.0)
+        {
+            *open = true;
+        }
     }
 
     /// Move the selection of a focused TreeList among visible rows
@@ -1008,6 +1154,9 @@ impl WidgetTree {
                 {
                     item.expanded = !item.expanded;
                 }
+            }
+            WidgetKind::Select { open, .. } => {
+                *open = !*open;
             }
             _ => {}
         }

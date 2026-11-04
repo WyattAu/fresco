@@ -65,6 +65,12 @@ fn gallery_tree() -> WidgetTree {
     tree.add_child(row, checkbox);
     tree.add_child(row, field);
     tree.add_child(root, spacer);
+    let pick = tree.push(WidgetKind::Select {
+        options: vec!["Priority".to_string(), "Normal".to_string()],
+        selected: 0,
+        open: false,
+    });
+    tree.add_child(root, pick);
     let outline = tree.push(WidgetKind::TreeList {
         items: vec![
             TreeItem {
@@ -147,11 +153,11 @@ fn baselines() -> Vec<(&'static str, u64, u64)> {
 // Baseline hashes are filled in by the bootstrap test below; the table
 // goes green after the first local run records them.
 const GOLDEN_DARK_ALPHA: u64 = 0xdd50_b1ad_2cb8_384d;
-const GOLDEN_DARK_RGB: u64 = 0xea3a_80db_5b09_ae80;
+const GOLDEN_DARK_RGB: u64 = 0xa812_6f60_6d7a_360e;
 const GOLDEN_LIGHT_ALPHA: u64 = 0xdd50_b1ad_2cb8_384d;
-const GOLDEN_LIGHT_RGB: u64 = 0x47ff_725b_8175_dd4c;
+const GOLDEN_LIGHT_RGB: u64 = 0x5f39_00b0_d56c_11ba;
 const GOLDEN_HC_ALPHA: u64 = 0xdd50_b1ad_2cb8_384d;
-const GOLDEN_HC_RGB: u64 = 0x4827_c00d_cc84_1cd3;
+const GOLDEN_HC_RGB: u64 = 0x7c22_76f6_a72c_ff0f;
 
 #[test]
 fn gallery_is_deterministic() {

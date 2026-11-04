@@ -54,6 +54,7 @@ fn walk(tree: &WidgetTree, current: Option<crate::WidgetRef>, built: &mut Vec<(N
         WidgetKind::ScrollPane { .. } => Role::List,
         WidgetKind::TabList { .. } => Role::TabList,
         WidgetKind::TreeList { .. } => Role::Tree,
+        WidgetKind::Select { .. } => Role::ComboBox,
     });
     match &w.kind {
         WidgetKind::Label { text, .. } => node.set_label(text.clone()),
@@ -75,6 +76,13 @@ fn walk(tree: &WidgetTree, current: Option<crate::WidgetRef>, built: &mut Vec<(N
         WidgetKind::TreeList { items, selected } => {
             if let Some(item) = items.get(*selected) {
                 node.set_label(item.label.clone());
+            }
+        }
+        WidgetKind::Select {
+            options, selected, ..
+        } => {
+            if let Some(opt) = options.get(*selected) {
+                node.set_label(opt.clone());
             }
         }
     }

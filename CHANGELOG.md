@@ -1,5 +1,20 @@
 # CHANGELOG
 
+## 0.3.7 (2026-11-04)
+
+Phase 3.2 close: select widget.
+
+- `widget-kit`: `Select` dropdown - closed shows the selected option
+  with a caret; click opens, click on an option commits + closes,
+  header click closes, empty space is ignored. Up/Down (focused) open
+  and step with immediate commit; Enter closes. Layout height grows
+  with the open state (header + one row per option). A11y emits
+  ComboBox with the selected name; AccessKit bridge emits
+  Role::ComboBox.
+- Gallery gains the select (every 3.2 widget now has a golden entry);
+  hashes re-bootstrapped. CVD per-widget suite covers the open
+  dropdown's visibility.
+
 ## 0.3.6 (2026-11-04)
 
 Phase 3.4 close: per-widget CVD verification.

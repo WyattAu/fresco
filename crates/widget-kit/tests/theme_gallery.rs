@@ -360,6 +360,29 @@ fn widget_states_stay_distinct_under_cvd_variants() {
             paint(&colors, &tabs_active(1)),
             "active tab must survive cvd {name}"
         );
+
+        // Select: an open dropdown must be visibly distinct from the
+        // closed header under the simulation.
+        let select_open = |open: bool| {
+            let mut tree = WidgetTree::new();
+            let root = tree.push(WidgetKind::Column { gap: 0.0 });
+            let sel = tree.push(WidgetKind::Select {
+                options: vec!["Read".to_string(), "Sent".to_string()],
+                selected: 0,
+                open,
+            });
+            tree.add_child(root, sel);
+            tree.compute(Size2D {
+                width: 220.0,
+                height: 110.0,
+            });
+            tree
+        };
+        assert_ne!(
+            paint(&colors, &select_open(false)),
+            paint(&colors, &select_open(true)),
+            "open dropdown must be visible under cvd {name}"
+        );
     }
 }
 

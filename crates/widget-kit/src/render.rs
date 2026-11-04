@@ -57,6 +57,21 @@ pub trait WidgetRenderer {
         let _ = (rect, tabs, active, colors, focused);
     }
 
+    /// Dropdown: header with the selected option and a caret marker;
+    /// when open, one row per option below with the selected row
+    /// highlighted.
+    fn select(
+        &mut self,
+        rect: Rect2D,
+        options: &[String],
+        selected: usize,
+        open: bool,
+        colors: &WidgetColors,
+        focused: bool,
+    ) {
+        let _ = (rect, options, selected, open, colors, focused);
+    }
+
     /// Tree rows: one row per visible item, selection highlight,
     /// expand markers, focus border.
     fn tree_list(
@@ -250,6 +265,51 @@ impl WidgetRenderer for DrawListPainter<'_> {
         }
         if focused {
             self.border(rect, 1.0, colors.focus_ring);
+        }
+    }
+
+    fn select(
+        &mut self,
+        rect: Rect2D,
+        options: &[String],
+        selected: usize,
+        open: bool,
+        colors: &WidgetColors,
+        focused: bool,
+    ) {
+        // Header: button fill, selected option + caret, focus border.
+        let header = Rect2D {
+            x: rect.x,
+            y: rect.y,
+            width: rect.width,
+            height: crate::SELECT_HEADER_H.min(rect.height),
+        };
+        self.fill(header, colors.button);
+        let label = options
+            .get(selected)
+            .map(|s| format!(" {s} v"))
+            .unwrap_or_else(|| " v".to_string());
+        self.label_text(header, &label, 14.0, colors.text);
+        if open {
+            for (i, opt) in options.iter().enumerate() {
+                let y = header.y
+                    + crate::SELECT_HEADER_H
+                    + f64::from(u16::try_from(i).unwrap_or(u16::MAX)) * crate::TREE_ROW_H;
+                let row = Rect2D {
+                    x: rect.x,
+                    y,
+                    width: rect.width,
+                    height: crate::TREE_ROW_H,
+                };
+                if i == selected {
+                    self.fill(row, colors.checkbox_box);
+                }
+                let text = format!(" {opt}");
+                self.label_text(row, &text, 13.0, colors.text);
+            }
+            self.border(rect, 1.0, colors.focus_ring);
+        } else if focused {
+            self.border(header, 1.0, colors.focus_ring);
         }
     }
 
@@ -470,6 +530,13 @@ fn paint_node(
         }
         WidgetKind::TreeList { items, selected } => {
             renderer.tree_list(rect, items, *selected, colors, w.focused);
+        }
+        WidgetKind::Select {
+            options,
+            selected,
+            open,
+        } => {
+            renderer.select(rect, options, *selected, *open, colors, w.focused);
         }
         WidgetKind::Row { .. } | WidgetKind::Column { .. } | WidgetKind::Spacer => {}
     }

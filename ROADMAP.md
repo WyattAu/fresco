@@ -52,7 +52,9 @@ Phase 2 earns it.
 - 2026-11-04: Phase 3.4 closed (0.3.6): per-widget CVD verification -
   checkbox state, focus ring, tree selection, and active-tab marker
   each pixel-distinct under protanopia/deuteranopia/tritanopia; stock
-  tab_strip implemented (TabList rendered nothing before). Phase 3
+  tab_strip implemented (TabList rendered nothing before).
+- 2026-11-04: Select dropdown landed (0.3.7) - the last Phase 3.2
+  widget; every 3.2 widget now has a golden gallery entry. Phase 3
   headless items complete; kestrel-gui alpha (Phase 2.4) remains.
 
 ## 3. Phases
