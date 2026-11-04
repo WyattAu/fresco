@@ -34,6 +34,7 @@ fn scroll_clamps_at_content_bounds() {
     // Content: 8 labels x 28.8 + 7 gaps x 12 = 314.4; viewport 120.
     tree.scroll(LogicalAt { x: 60.0, y: 30.0 }, -500.0);
     let offset = tree.scroll_offset(pane);
+    println!("offset after scroll: {offset}");
     assert!((offset - 194.4).abs() < 1e-9, "offset {offset}");
 }
 
