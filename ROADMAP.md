@@ -61,6 +61,9 @@ Phase 2 earns it.
   `parity` harness - both backends agree within one channel step on
   the shared fixture (mismatch_frac=0, max_delta=1), strict gate runs
   in CI via --all-features.
+- 2026-11-05: gradient parity (0.4.1): linear + radial gradient draws
+  in the shared fixture; the strict one-step oracle holds unchanged.
+  StripTarget gains fill_linear/fill_radial.
 
 ## 3. Phases
 

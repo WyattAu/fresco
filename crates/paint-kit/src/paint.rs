@@ -34,6 +34,18 @@ impl From<Solid> for Paint {
     }
 }
 
+impl From<LinearGradient> for Paint {
+    fn from(g: LinearGradient) -> Paint {
+        Paint::Linear(g)
+    }
+}
+
+impl From<RadialGradient> for Paint {
+    fn from(g: RadialGradient) -> Paint {
+        Paint::Radial(g)
+    }
+}
+
 /// Linear gradient.
 #[derive(Clone, Debug, PartialEq)]
 pub struct LinearGradient {

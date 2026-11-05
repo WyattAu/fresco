@@ -258,3 +258,20 @@ fn label_text_pixels_differ_per_character() {
     let blank = make(" ");
     assert_ne!(hash(&a), hash(&blank), "text must differ from blank");
 }
+
+#[test]
+fn gallery_artifact_bmp_written() {
+    // Human-eye artifact: the dark-palette gallery surface written as
+    // a BMP under /tmp/opencode for device-screen inspection.
+    let surface = render_case("dark");
+    let dir = std::path::Path::new("/tmp/opencode");
+    std::fs::create_dir_all(dir).ok();
+    let surface_ref = render_conformance::SurfaceRef::new(
+        surface.data(),
+        surface.rect().width() as usize,
+        surface.rect().height() as usize,
+        (surface.rect().width() as usize) * 4,
+    );
+    let written = render_conformance::write_bmp(&dir.join("gallery-dark.bmp"), &surface_ref);
+    assert!(written.is_ok(), "gallery BMP must write");
+}

@@ -92,6 +92,73 @@ impl StripTarget {
             .fill_rect(&KRect::new(rect.x0, rect.y0, rect.x1, rect.y1));
     }
 
+    /// Build vello color stops from straight RGBA8 pairs.
+    fn vello_stops(stops: &[(f32, [u8; 4])]) -> vello_common::peniko::ColorStops {
+        let mut out = vello_common::peniko::ColorStops::new();
+        for (offset, color) in stops {
+            out.push(vello_common::peniko::ColorStop::from((
+                *offset,
+                vello_cpu::color::AlphaColor::from_rgba8(color[0], color[1], color[2], color[3]),
+            )));
+        }
+        out
+    }
+
+    /// Fill with a linear gradient along the `start` -> `end` axis in
+    /// device pixels; stops are straight RGBA8 at offsets in `[0, 1]`
+    /// and must be opaque (alpha 255) so both backends interpolate the
+    /// same premultiplied values.
+    pub fn fill_linear(
+        &mut self,
+        rect: Rect,
+        start: (f64, f64),
+        end: (f64, f64),
+        stops: &[(f32, [u8; 4])],
+    ) {
+        let gradient = vello_common::peniko::Gradient {
+            kind: vello_common::peniko::GradientKind::Linear(
+                vello_common::peniko::LinearGradientPosition {
+                    start: vello_cpu::kurbo::Point::new(start.0, start.1),
+                    end: vello_cpu::kurbo::Point::new(end.0, end.1),
+                },
+            ),
+            stops: Self::vello_stops(stops),
+            extend: vello_common::peniko::Extend::Pad,
+            ..Default::default()
+        };
+        self.ctx.set_paint(gradient);
+        self.ctx
+            .fill_rect(&KRect::new(rect.x0, rect.y0, rect.x1, rect.y1));
+    }
+
+    /// Fill with a radial gradient from `center` with `radius` in
+    /// device pixels; same stop conventions as [`Self::fill_linear`].
+    pub fn fill_radial(
+        &mut self,
+        rect: Rect,
+        center: (f64, f64),
+        radius: f64,
+        stops: &[(f32, [u8; 4])],
+    ) {
+        let c = vello_cpu::kurbo::Point::new(center.0, center.1);
+        let gradient = vello_common::peniko::Gradient {
+            kind: vello_common::peniko::GradientKind::Radial(
+                vello_common::peniko::RadialGradientPosition {
+                    start_center: c,
+                    start_radius: 0.0,
+                    end_center: c,
+                    end_radius: radius as f32,
+                },
+            ),
+            stops: Self::vello_stops(stops),
+            extend: vello_common::peniko::Extend::Pad,
+            ..Default::default()
+        };
+        self.ctx.set_paint(gradient);
+        self.ctx
+            .fill_rect(&KRect::new(rect.x0, rect.y0, rect.x1, rect.y1));
+    }
+
     /// Flush the command stream and composite into the internal
     /// premultiplied RGBA8 buffer (replace mode: the pixmap is cleared
     /// and re-rendered from the full command stream, so repeated calls

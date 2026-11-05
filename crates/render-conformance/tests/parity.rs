@@ -18,35 +18,112 @@ use std::path::Path;
 const WIDTH: usize = 96;
 const HEIGHT: usize = 64;
 
-/// The shared fixture: (rect, straight rgba8 color) pairs, drawn in
-/// order onto a transparent start. The last rect extends past the
-/// canvas so both backends clip identically.
-fn fixtures() -> Vec<(path_kit::Rect, [u8; 4])> {
+const BLUE_STOPS: &[(f32, [u8; 4])] = &[
+    (0.0, [16, 42, 96, 255]),
+    (0.5, [64, 140, 220, 255]),
+    (1.0, [220, 236, 252, 255]),
+];
+const WARM_STOPS: &[(f32, [u8; 4])] = &[(0.0, [120, 24, 24, 255]), (1.0, [250, 210, 120, 255])];
+
+/// One fixture draw, applied identically to both backends.
+#[derive(Clone, Copy)]
+enum Draw {
+    /// Opaque or blended solid.
+    Solid(path_kit::Rect, [u8; 4]),
+    /// Linear gradient along a device-space axis, opaque stops.
+    Linear(
+        path_kit::Rect,
+        (f64, f64),
+        (f64, f64),
+        &'static [(f32, [u8; 4])],
+    ),
+    /// Radial gradient from a center with a radius, opaque stops.
+    Radial(path_kit::Rect, (f64, f64), f64, &'static [(f32, [u8; 4])]),
+}
+
+/// The shared fixture: draws applied in order onto a transparent
+/// start. Solids stress blending; the gradients stress ramp
+/// interpolation and pad clamping; the last two draws clip at the
+/// canvas boundary so both backends crop identically.
+fn fixtures() -> Vec<Draw> {
     use path_kit::{Rect, Vec2};
     let ltrb = |x0: f64, y0: f64, x1: f64, y1: f64| {
         Rect::from_points(Vec2::new(x0, y0), Vec2::new(x1, y1))
     };
     vec![
-        (ltrb(8.0, 8.0, 88.0, 40.0), [40, 80, 200, 255]),
-        (ltrb(40.0, 24.0, 92.0, 56.0), [255, 0, 0, 128]),
-        (ltrb(0.0, 0.0, 16.0, 16.0), [20, 160, 90, 200]),
-        (ltrb(16.0, 16.0, 32.0, 32.0), [230, 230, 40, 255]),
-        (ltrb(64.0, 48.0, 128.0, 80.0), [12, 12, 14, 90]),
+        Draw::Solid(ltrb(8.0, 8.0, 88.0, 40.0), [40, 80, 200, 255]),
+        Draw::Solid(ltrb(40.0, 24.0, 92.0, 56.0), [255, 0, 0, 128]),
+        Draw::Solid(ltrb(0.0, 0.0, 16.0, 16.0), [20, 160, 90, 200]),
+        Draw::Solid(ltrb(16.0, 16.0, 32.0, 32.0), [230, 230, 40, 255]),
+        Draw::Linear(
+            ltrb(24.0, 8.0, 64.0, 40.0),
+            (24.0, 8.0),
+            (64.0, 40.0),
+            BLUE_STOPS,
+        ),
+        Draw::Radial(ltrb(40.0, 40.0, 88.0, 64.0), (64.0, 52.0), 20.0, WARM_STOPS),
+        Draw::Solid(ltrb(64.0, 48.0, 128.0, 80.0), [12, 12, 14, 90]),
     ]
+}
+
+/// Apply one draw to the CPU reference.
+fn apply_cpu(surface: &mut Surface, painter: &mut Painter, draw: &Draw) {
+    match *draw {
+        Draw::Solid(rect, color) => {
+            // Straight-alpha input: Solid::new premultiplies. (Fixture
+            // colors carry semi-transparent alphas, where premul and
+            // straight bytes differ.)
+            painter.fill_rect(surface, rect, &paint_kit::Paint::from(Solid::new(color)));
+        }
+        Draw::Linear(rect, start, end, stops) => {
+            let g = paint_kit::LinearGradient::new(
+                path_kit::Vec2::new(start.0, start.1),
+                path_kit::Vec2::new(end.0, end.1),
+                stops
+                    .iter()
+                    .map(|(o, c)| paint_kit::ColorStop {
+                        offset: *o,
+                        color: *c,
+                    })
+                    .collect(),
+            );
+            painter.fill_rect(surface, rect, &paint_kit::Paint::from(g));
+        }
+        Draw::Radial(rect, center, radius, stops) => {
+            let g = paint_kit::RadialGradient::new(
+                path_kit::Vec2::new(center.0, center.1),
+                radius,
+                stops
+                    .iter()
+                    .map(|(o, c)| paint_kit::ColorStop {
+                        offset: *o,
+                        color: *c,
+                    })
+                    .collect(),
+            );
+            painter.fill_rect(surface, rect, &paint_kit::Paint::from(g));
+        }
+    }
+}
+
+/// Apply one draw to the sparse-strip backend.
+fn apply_strip(target: &mut paint_kit::StripTarget, draw: &Draw) {
+    match *draw {
+        Draw::Solid(rect, color) => target.fill_rect(rect, color),
+        Draw::Linear(rect, start, end, stops) => {
+            target.fill_linear(rect, start, end, stops);
+        }
+        Draw::Radial(rect, center, radius, stops) => {
+            target.fill_radial(rect, center, radius, stops);
+        }
+    }
 }
 
 fn cpu_reference() -> Surface {
     let mut surface = Surface::new(WIDTH, HEIGHT).unwrap_or_default();
     let mut painter = Painter::default();
-    for (rect, color) in fixtures() {
-        // Straight-alpha input: Solid::new premultiplies. (The fixture
-        // colors carry semi-transparent alphas, where premul and
-        // straight bytes differ.)
-        painter.fill_rect(
-            &mut surface,
-            rect,
-            &paint_kit::Paint::from(Solid::new(color)),
-        );
+    for draw in fixtures() {
+        apply_cpu(&mut surface, &mut painter, &draw);
     }
     surface
 }
@@ -55,8 +132,8 @@ fn strip_render() -> Surface {
     let Some(mut target) = paint_kit::StripTarget::new(96, 64) else {
         return Surface::new(WIDTH, HEIGHT).unwrap_or_default();
     };
-    for (rect, color) in fixtures() {
-        target.fill_rect(rect, color);
+    for draw in fixtures() {
+        apply_strip(&mut target, &draw);
     }
     let mut surface = Surface::new(WIDTH, HEIGHT).unwrap_or_default();
     if paint_kit::strip_into_surface(&mut target, &mut surface).is_none() {
@@ -82,6 +159,11 @@ fn sparse_strip_matches_cpu_reference_within_tolerance() {
     };
     match compare(&as_ref(&cpu), &as_ref(&strip), cfg) {
         Ok(report) => {
+            // Artifacts for human eyes (device screens, PR review):
+            // written on every run, not just failures.
+            let dir = Path::new("/tmp/opencode");
+            let _ = write_bmp(&dir.join("parity-cpu.bmp"), &as_ref(&cpu));
+            let _ = write_bmp(&dir.join("parity-strip.bmp"), &as_ref(&strip));
             println!(
                 "parity ok: mismatch_frac={:.5} max_delta={}",
                 report.mismatch_frac, report.max_delta

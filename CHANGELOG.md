@@ -1,5 +1,20 @@
 # CHANGELOG
 
+## 0.4.1 (2026-11-05)
+
+Phase 4.1: gradient parity.
+
+- `paint-kit` `sparse-strip`: `StripTarget::fill_linear` and
+  `fill_radial` (device-space axes, straight opaque stops, pad
+  clamping); `Paint` gains `From<LinearGradient>`/`From<RadialGradient>`.
+- `render-conformance` parity fixture extended with linear and radial
+  gradient draws. The strict oracle holds unchanged: every pixel
+  within one channel step, zero mismatch budget (sRGB premultiplied
+  interpolation on both sides; stops must be opaque so premultiplied
+  and straight bytes coincide).
+- Parity BMP artifacts (cpu + strip) written per run to
+  /tmp/opencode for visual inspection.
+
 ## 0.4.0 (2026-11-05)
 
 Phase 4.1 groundwork: sparse-strip backend + Gate C parity harness.
