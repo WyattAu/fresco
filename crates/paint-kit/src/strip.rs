@@ -18,7 +18,7 @@
 use crate::{Rect, Surface};
 use vello_cpu::{
     Level, Pixmap, RasterizerSettings, RenderContext, RenderMode, RenderSettings, Resources,
-    kurbo::Rect as KRect,
+    kurbo::{Rect as KRect, Shape},
 };
 
 /// Quality-first f32 rasterization with single-threaded dispatch.
@@ -159,6 +159,19 @@ impl StripTarget {
             .fill_rect(&KRect::new(rect.x0, rect.y0, rect.x1, rect.y1));
     }
 
+    /// Fill an axis-aligned rounded rect (uniform corner radius
+    /// clamped to half the shorter side) with a straight RGBA8 color.
+    /// Same geometry as [`crate::Painter::fill_round_rect`].
+    pub fn fill_round_rect(&mut self, rect: Rect, radius: f64, color: [u8; 4]) {
+        let r = radius.clamp(0.0, rect.width().min(rect.height()) * 0.5);
+        let krect = KRect::new(rect.x0, rect.y0, rect.x1, rect.y1);
+        let shape = vello_cpu::kurbo::RoundedRect::from_rect(krect, r);
+        self.ctx.set_paint(vello_cpu::color::AlphaColor::from_rgba8(
+            color[0], color[1], color[2], color[3],
+        ));
+        self.ctx.fill_path(&shape.to_path(0.1));
+    }
+
     /// Flush the command stream and composite into the internal
     /// premultiplied RGBA8 buffer (replace mode: the pixmap is cleared
     /// and re-rendered from the full command stream, so repeated calls
@@ -231,6 +244,40 @@ mod tests {
         for px in bytes.as_chunks::<4>().0 {
             assert_eq!(px, &[40, 80, 200, 255], "opaque fill must be exact");
         }
+    }
+
+    #[test]
+    fn rounded_rect_covers_center_not_square_corner() {
+        let Some(mut t) = StripTarget::new(20, 20) else {
+            return;
+        };
+        t.fill_round_rect(
+            Rect {
+                x0: 0.0,
+                y0: 0.0,
+                x1: 20.0,
+                y1: 20.0,
+            },
+            6.0,
+            [10, 200, 90, 255],
+        );
+        let bytes = t.composite();
+        let px = |x: usize, y: usize| -> Option<[u8; 4]> {
+            let b = (y * 20 + x) * 4;
+            bytes.get(b..b + 4).map(|quad| {
+                let mut out = [0_u8; 4];
+                for (slot, byte) in out.iter_mut().zip(quad) {
+                    *slot = *byte;
+                }
+                out
+            })
+        };
+        // Center is solidly covered.
+        let c = px(10, 10).unwrap_or_default();
+        assert_eq!(c, [10, 200, 90, 255], "center must be exact: {c:?}");
+        // The square corner sits outside the rounded outline.
+        let corner = px(0, 0).unwrap_or_default();
+        assert_eq!(corner[3], 0, "square corner must be empty: {corner:?}");
     }
 
     #[test]

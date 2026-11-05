@@ -64,6 +64,10 @@ Phase 2 earns it.
 - 2026-11-05: gradient parity (0.4.1): linear + radial gradient draws
   in the shared fixture; the strict one-step oracle holds unchanged.
   StripTarget gains fill_linear/fill_radial.
+- 2026-11-05: rounded-rect fills (0.4.2, 4.3 groundwork): CPU kappa
+  cubics vs kurbo RoundedRect on the strip pipeline; interior pixels
+  hold one-step parity, corner arcs under an explicit 2% budget
+  (measured 0.72%). First 4.3 chrome primitive.
 
 ## 3. Phases
 

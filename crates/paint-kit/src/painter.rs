@@ -132,6 +132,19 @@ impl Painter {
         self.tolerance
     }
 
+    /// Fill an axis-aligned rounded rect (uniform corner radius,
+    /// clamped to half the shorter side) through the winding raster.
+    pub fn fill_round_rect(
+        &mut self,
+        surface: &mut Surface,
+        rect: Rect,
+        radius: f64,
+        paint: &Paint,
+    ) {
+        let path = rounded_rect_path(rect, radius);
+        self.fill_path(surface, &path, Affine::IDENTITY, FillRule::NonZero, paint);
+    }
+
     /// Fill a path under a transform.
     pub fn fill_path(
         &mut self,
@@ -333,6 +346,46 @@ pub fn parity_reduce(polys: &[Poly]) -> Vec<Poly> {
             }
         })
         .collect()
+}
+
+/// Build the outline of an axis-aligned rounded rect: four lines and
+/// four quarter circles (cubic approximation, kappa). Same geometry
+/// the sparse-strip backend uses via kurbo's `RoundedRect`, so the
+/// parity harness compares like with like.
+#[must_use]
+pub fn rounded_rect_path(rect: Rect, radius: f64) -> crate::Path {
+    const KAPPA: f64 = 0.552_284_749_830_793_3;
+    let r = radius.clamp(0.0, rect.width().min(rect.height()) * 0.5);
+    let (x0, y0, x1, y1) = (rect.x0, rect.y0, rect.x1, rect.y1);
+    let k = r * KAPPA;
+    let mut path = crate::Path::new();
+    path.move_to(crate::Vec2::new(x0 + r, y0));
+    path.line_to(crate::Vec2::new(x1 - r, y0));
+    path.cubic_to(
+        crate::Vec2::new(x1 - r + k, y0),
+        crate::Vec2::new(x1, y0 + r - k),
+        crate::Vec2::new(x1, y0 + r),
+    );
+    path.line_to(crate::Vec2::new(x1, y1 - r));
+    path.cubic_to(
+        crate::Vec2::new(x1, y1 - r + k),
+        crate::Vec2::new(x1 - r + k, y1),
+        crate::Vec2::new(x1 - r, y1),
+    );
+    path.line_to(crate::Vec2::new(x0 + r, y1));
+    path.cubic_to(
+        crate::Vec2::new(x0 + r - k, y1),
+        crate::Vec2::new(x0, y1 - r + k),
+        crate::Vec2::new(x0, y1 - r),
+    );
+    path.line_to(crate::Vec2::new(x0, y0 + r));
+    path.cubic_to(
+        crate::Vec2::new(x0, y0 + r - k),
+        crate::Vec2::new(x0 + r - k, y0),
+        crate::Vec2::new(x0 + r, y0),
+    );
+    path.close();
+    path
 }
 
 #[cfg(test)]

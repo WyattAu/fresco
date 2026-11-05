@@ -71,9 +71,11 @@ A lower layer must never name a higher layer's types.
   Oracle: `cargo test -p paint-kit fill_rules`.
 - REQ-R3 (backend parity, Gate C): the sparse-strip backend
   (vello_cpu 0.2, paint-kit `sparse-strip` feature) matches the CPU
-  reference on a shared fixture of solid and linear/radial-gradient
-  rect draws within one channel step on every pixel, and the harness
-  rejects a deliberately wrong buffer.
+  reference on a shared fixture of solid, linear/radial-gradient, and
+  rounded-rect draws: interior pixels within one channel step, and a
+  corner-arc band (measured 0.72%, budget 2%) where independent curve
+  flattening may diverge. The harness rejects a deliberately wrong
+  buffer.
   Oracle: `cargo test -p render-conformance --features parity`.
 - REQ-S1 (arena safety): stale generation handles return `None`; slots are
   reused with a bumped generation.

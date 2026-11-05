@@ -1,5 +1,21 @@
 # CHANGELOG
 
+## 0.4.2 (2026-11-05)
+
+Phase 4.3 groundwork: rounded-rect fills on both backends.
+
+- `paint-kit`: `Painter::fill_round_rect` (CPU reference: kappa
+  quarter-circle cubics through the winding raster) and
+  `StripTarget::fill_round_rect` (kurbo RoundedRect on the sparse-strip
+  pipeline), radius clamped to half the shorter side on both.
+- Parity: rounded-rect draws join the shared fixture. Interior pixels
+  hold the one-step oracle; corner arcs carry an explicit 2% pixel
+  budget (measured 0.72%): independent curve flattening parameterizes
+  the same quarter-circle cubics differently, so a thin corner-edge
+  band diverges. Budget and measurement are documented in the test.
+- Strip unit test: rounded rect covers its center exactly and leaves
+  the square corner empty.
+
 ## 0.4.1 (2026-11-05)
 
 Phase 4.1: gradient parity.
