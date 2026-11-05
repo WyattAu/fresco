@@ -19,6 +19,10 @@
 pub mod paint;
 pub mod painter;
 pub mod raster;
+#[cfg(feature = "sparse-strip")]
+pub mod strip;
+#[cfg(feature = "sparse-strip")]
+pub use strip::{StripTarget, strip_into_surface};
 pub mod surface;
 
 pub use paint::{ColorStop, LinearGradient, Paint, RadialGradient};

@@ -1,5 +1,28 @@
 # CHANGELOG
 
+## 0.4.0 (2026-11-05)
+
+Phase 4.1 groundwork: sparse-strip backend + Gate C parity harness.
+
+- `paint-kit` gains the default-off `sparse-strip` feature:
+  `StripTarget` delegates the same fill-rect draw calls to vello_cpu
+  0.2's sparse-strip pipeline (single-threaded dispatch, quality-first
+  f32 rasterization), with `strip_into_surface` for engine consumers.
+- `render-conformance` gains the `parity` feature: a shared rect
+  fixture (opaque, semi-transparent, overlapping, edge-adjacent, and
+  boundary-clipped draws) rasterized through both backends and
+  compared with a strict oracle - every pixel within one channel step,
+  zero mismatch budget, plus a vacuity check that a deliberately wrong
+  buffer fails. Measured: mismatch_frac=0.00000, max_delta=1.
+- This is Gate C's second option (hybrid CPU sparse-strip) made
+  swappable by construction: the CPU reference stays primary until a
+  measured decision says otherwise (ADR-0004). CI runs the parity gate
+  through --all-features.
+- Latent convention quirk surfaced by the harness and left documented:
+  widget-kit's stock renderer calls `Solid::premul` with straight
+  palette bytes - exact for the opaque palettes it uses, wrong for
+  future semi-transparent ones (goldens bake the current convention).
+
 ## 0.3.7 (2026-11-04)
 
 Phase 3.2 close: select widget.

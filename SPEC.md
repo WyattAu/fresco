@@ -69,6 +69,11 @@ A lower layer must never name a higher layer's types.
   same-orientation nested outlines are solid under EvenOdd after parity
   reduction.
   Oracle: `cargo test -p paint-kit fill_rules`.
+- REQ-R3 (backend parity, Gate C): the sparse-strip backend
+  (vello_cpu 0.2, paint-kit `sparse-strip` feature) matches the CPU
+  reference on a shared rect fixture within one channel step on every
+  pixel, and the harness rejects a deliberately wrong buffer.
+  Oracle: `cargo test -p render-conformance --features parity`.
 - REQ-S1 (arena safety): stale generation handles return `None`; slots are
   reused with a bumped generation.
   Oracle: `cargo test -p scene-kit arena_generations`.

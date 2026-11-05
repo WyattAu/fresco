@@ -24,6 +24,9 @@ Traceability for the fresco engine. REQ identifiers match `SPEC.md` section
 
 - REQ-R1 coverage: rect fill exact, triangle within 1 percent of analytic.
 - REQ-R2 fill rules: NonZero honors opposite-oriented holes; EvenOdd parity
+- REQ-R3 sparse-strip backend parity with CPU reference (Gate C):
+  fixture-level pixel agreement within delta 1, zero mismatch budget
+  (`sparse-strip` feature + render-conformance `parity` feature)
   reduction makes nested same-orientation outlines solid with hollow cores.
 - REQ-R3 compositing is premultiplied and associative on test cases.
 - REQ-R4 no unsafe; scalar code is the reference; SIMD is optimization only.

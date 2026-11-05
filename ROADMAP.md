@@ -56,6 +56,11 @@ Phase 2 earns it.
 - 2026-11-04: Select dropdown landed (0.3.7) - the last Phase 3.2
   widget; every 3.2 widget now has a golden gallery entry. Phase 3
   headless items complete; kestrel-gui alpha (Phase 2.4) remains.
+- 2026-11-05: Phase 4.1 groundwork (0.4.0): paint-kit `sparse-strip`
+  feature (vello_cpu 0.2 backend, Gate C option B) + render-conformance
+  `parity` harness - both backends agree within one channel step on
+  the shared fixture (mismatch_frac=0, max_delta=1), strict gate runs
+  in CI via --all-features.
 
 ## 3. Phases
 

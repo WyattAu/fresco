@@ -12,10 +12,11 @@ publish = false
 exclude = ["/target"]
 
 [dependencies]
-
-[dev-dependencies]
-paint-kit = { workspace = true }
+paint-kit = { workspace = true, features = ["sparse-strip"] }
 path-kit = { workspace = true }
+
+[features]
+parity = []
 
 [lints.rust]
 missing_docs = "deny"

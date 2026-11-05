@@ -12,6 +12,11 @@ exclude = ["/target"]
 
 [dependencies]
 path-kit = { workspace = true }
+vello_cpu = { version = "0.2", optional = true }
+
+[features]
+default = []
+sparse-strip = ["dep:vello_cpu"]
 
 [lints.rust]
 missing_docs = "deny"
