@@ -1,5 +1,21 @@
 # CHANGELOG
 
+## 0.4.9 (2026-11-06)
+
+Phase 4.3 completion: shadows reach the widget chrome, with the
+damage story extended to carry them.
+
+- `button_frame` and the `select` header draw a soft drop shadow
+  (sigma 3, near-black, luminance-only so CVD-neutral - no palette
+  field) before their rounded fills.
+- `paint_tree_plan` inflates every damage region by
+  `SHADOW_MARGIN` (10 px) before pixel-aligning: shadowed widgets
+  paint up to the margin beyond their rect, and uninflated regions
+  leave stale shadow bytes. Load-bearing, verified by falsification:
+  removing the inflation fails the appearance proof on 389 stale
+  falloff bytes.
+- Gallery hashes re-bootstrapped for the shadowed chrome.
+
 ## 0.4.8 (2026-11-06)
 
 Phase 4.3: shadow stage 2 - the strip backend.

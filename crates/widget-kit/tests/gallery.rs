@@ -153,9 +153,9 @@ fn baselines() -> Vec<(&'static str, u64, u64)> {
 // Baseline hashes are filled in by the bootstrap test below; the table
 // goes green after the first local run records them.
 const GOLDEN_DARK_ALPHA: u64 = 0xdd50_b1ad_2cb8_384d;
-const GOLDEN_DARK_RGB: u64 = 0x222c_ca1c_ffa3_0c1d;
+const GOLDEN_DARK_RGB: u64 = 0x3ee5_3377_046c_d3c1;
 const GOLDEN_LIGHT_ALPHA: u64 = 0xdd50_b1ad_2cb8_384d;
-const GOLDEN_LIGHT_RGB: u64 = 0xe204_64d8_f68a_15f4;
+const GOLDEN_LIGHT_RGB: u64 = 0x4560_9562_3c8a_437f;
 const GOLDEN_HC_ALPHA: u64 = 0xdd50_b1ad_2cb8_384d;
 const GOLDEN_HC_RGB: u64 = 0xdf32_b339_1e41_9bc7;
 

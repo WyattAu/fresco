@@ -175,6 +175,10 @@ impl Painter {
         if x_max <= x_min || y_max <= y_min {
             return;
         }
+        // Respect the active painter clip: blend_pixel writes straight
+        // to the surface and would otherwise double-blend over pixels
+        // a damage region pass must not touch.
+        let clip = self.clip();
         let r = radius.clamp(0.0, rect.width().min(rect.height()) * 0.5);
         let cx = (rect.x0 + rect.x1) * 0.5;
         let cy = (rect.y0 + rect.y1) * 0.5;
@@ -191,6 +195,12 @@ impl Painter {
                 let qy = (pyf - cy).abs() - hy;
                 let outer = qx.max(0.0).hypot(qy.max(0.0));
                 let d = (outer + qx.max(qy).min(0.0)).max(0.0);
+                if let Some(clip) = clip {
+                    // Pixel center must lie inside the clip rect.
+                    if pxf < clip.x0 || pxf > clip.x1 || pyf < clip.y0 || pyf > clip.y1 {
+                        continue;
+                    }
+                }
                 let alpha = (-d * d * inv).exp();
                 if alpha < 0.004 {
                     continue;

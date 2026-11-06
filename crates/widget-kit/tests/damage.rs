@@ -197,6 +197,68 @@ fn tree_selection_move_damages_rows_not_panel() {
 }
 
 #[test]
+fn shadowed_widget_appearance_damages_inflated_region() {
+    // Frame A: an empty panel (childless root paints the surface).
+    // Frame B: a shadowed button appears. The damage plan covers the
+    // bare button rect; paint_tree_plan must inflate it by
+    // SHADOW_MARGIN or the shadow pixels outside the rect stay stale
+    // (frame A had no shadow there). Load-bearing, verified by
+    // falsification: with the inflation removed this test fails on
+    // 389 stale bytes in the falloff band.
+    let mut empty = WidgetTree::new();
+    let empty_root = empty.push(WidgetKind::Column { gap: 0.0 });
+    if let Some(root) = empty.widget_mut(empty_root) {
+        root.fixed_width = Some(220.0);
+        root.fixed_height = Some(130.0);
+    }
+    empty.compute(Size2D {
+        width: 220.0,
+        height: 130.0,
+    });
+
+    let mut tree = WidgetTree::new();
+    let root = tree.push(WidgetKind::Column { gap: 0.0 });
+    let button = tree.push(WidgetKind::Button {
+        label: "Save".to_string(),
+        action: 1,
+    });
+    tree.add_child(root, button);
+    tree.compute(Size2D {
+        width: 220.0,
+        height: 130.0,
+    });
+    let Some(new_rect) = tree.widget(button).map(|w| to_device(w.rect)) else {
+        return;
+    };
+
+    let mut frame = render_full(&empty);
+
+    let mut tracker = DamageTracker::new(8, 0.9);
+    tracker.invalidate(new_rect);
+    let plan = tracker.take_plan(paint_kit::Rect::from_points(
+        paint_kit::Vec2::new(0.0, 0.0),
+        paint_kit::Vec2::new(220.0, 130.0),
+    ));
+    assert!(matches!(plan, FramePlan::Regions(_)), "plan: {plan:?}");
+
+    let mut painter = paint_kit::Painter::default();
+    paint_tree_plan(
+        &tree,
+        &mut frame,
+        &mut painter,
+        &WidgetColors::default(),
+        &plan,
+    );
+
+    let full = render_full(&tree);
+    assert_eq!(
+        bytes(&frame),
+        bytes(&full),
+        "shadowed appearance repaint must equal full render"
+    );
+}
+
+#[test]
 fn full_plan_equals_paint_tree() {
     let (tree, _button, _checkbox, _list) = make_tree();
     let mut surface = paint_kit::Surface::new(220, 130).unwrap_or_default();

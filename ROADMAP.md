@@ -95,6 +95,10 @@ Phase 2 earns it.
   out of the per-pixel parity gate by documented design (50%-at-edge
   convolution vs 100%-at-edge SDF); structural falloff tests on both
   backends.
+- 2026-11-06: shadowed chrome (0.4.9): buttons and select headers
+  carry soft shadows; paint_tree_plan inflates damage regions by
+  SHADOW_MARGIN (falsification-verified: 389 stale bytes without).
+  Phase 4.3 SDF shadows closed end to end.
 
 ## 3. Phases
 

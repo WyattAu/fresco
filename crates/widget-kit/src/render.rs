@@ -149,6 +149,18 @@ impl DrawListPainter<'_> {
         );
     }
 
+    fn fill_shadow(&mut self, rect: Rect2D, radius: f64) {
+        // Fixed near-black, luminance-only: identical under every CVD
+        // variant and every theme, so no palette field is needed.
+        self.painter.fill_shadow_round_rect(
+            self.surface,
+            into_rect(rect),
+            radius,
+            3.0,
+            [0, 0, 0, 170],
+        );
+    }
+
     fn border(&mut self, rect: Rect2D, thickness: f64, color: [u8; 4]) {
         let t = thickness.max(1.0);
         let edges = [
@@ -304,6 +316,7 @@ impl WidgetRenderer for DrawListPainter<'_> {
             width: rect.width,
             height: crate::SELECT_HEADER_H.min(rect.height),
         };
+        self.fill_shadow(header, 6.0);
         if focused {
             self.fill_round(header, 6.0, colors.focus_ring);
             self.fill_round(inflate(header, -1.5), 4.5, colors.button);
@@ -386,6 +399,10 @@ impl WidgetRenderer for DrawListPainter<'_> {
     }
 
     fn button_frame(&mut self, rect: Rect2D, colors: &WidgetColors, focused: bool, pressed: bool) {
+        // Soft drop shadow first (extends SHADOW_MARGIN beyond the
+        // rect; damage regions touching shadowed widgets must be
+        // inflated - see paint_tree_plan).
+        self.fill_shadow(rect, 6.0);
         // Rounded corners; when focused the fill insets so the ring
         // color shows as a border INSIDE the widget rect (damage
         // regions are the widget rect - nothing may paint outside).
@@ -466,8 +483,12 @@ impl WidgetRenderer for DrawListPainter<'_> {
     }
 }
 
-/// Paint a whole tree: root panel, then widgets back-to-front. A root
-/// ScrollPane clips and translates its children.
+/// How far a shadowed widget's shadow extends beyond its rect
+/// (sigma 3, so 3 sigma = 9 px, rounded up to 10). Damage regions
+/// touching a shadowed widget must be inflated by this much or stale
+/// shadow bytes remain.
+pub const SHADOW_MARGIN: f64 = 10.0;
+
 /// Paint the tree constrained to a scene-kit damage plan.
 ///
 /// [`FramePlan::Full`] behaves like [`paint_tree`]; [`FramePlan::None`]
@@ -488,15 +509,19 @@ pub fn paint_tree_plan(
         FramePlan::Full => paint_tree(tree, surface, painter, colors),
         FramePlan::Regions(regions) => {
             for region in regions {
-                // Pixel-align the clip: a widget rect edge at a
-                // fractional pixel still blends into that pixel on a
-                // full render, so the damage clip must include it
-                // (floor the leading edges, ceil the trailing ones).
+                // Inflate by the shadow margin first: shadowed widgets
+                // (buttons, select headers) paint up to SHADOW_MARGIN
+                // beyond their rect, and a sub-widget-rect region would
+                // leave stale shadow bytes. Then pixel-align the clip:
+                // a widget rect edge at a fractional pixel still blends
+                // into that pixel on a full render, so the damage clip
+                // must include it (floor the leading edges, ceil the
+                // trailing ones).
                 let clip = Rect {
-                    x0: region.x0.floor(),
-                    y0: region.y0.floor(),
-                    x1: region.x1.ceil(),
-                    y1: region.y1.ceil(),
+                    x0: (region.x0 - SHADOW_MARGIN).floor(),
+                    y0: (region.y0 - SHADOW_MARGIN).floor(),
+                    x1: (region.x1 + SHADOW_MARGIN).ceil(),
+                    y1: (region.y1 + SHADOW_MARGIN).ceil(),
                 };
                 painter.push_clip(clip);
                 paint_tree(tree, surface, painter, colors);

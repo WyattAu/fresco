@@ -197,8 +197,9 @@ A lower layer must never name a higher layer's types.
   Oracle: `cargo test -p widget-kit --test select`.
 - REQ-K15 (damage): `paint_tree_plan` driven by a scene-kit
   `FramePlan` reproduces a full re-render byte-identically (regions
-  are pixel-aligned at the rendering boundary), `None` leaves the
-  previous frame untouched, and `Full` equals `paint_tree`.
+  are pixel-aligned and inflated by `SHADOW_MARGIN` at the rendering
+  boundary - shadowed widgets paint beyond their rect), `None` leaves
+  the previous frame untouched, and `Full` equals `paint_tree`.
   Oracle: `cargo test -p widget-kit --test damage`.
 
 ## 5. Coverage tier
