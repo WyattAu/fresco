@@ -1,5 +1,17 @@
 # CHANGELOG
 
+## 0.4.6 (2026-11-06)
+
+Phase 4.1 close: damage-plan rendering on the strip backend.
+
+- Proof test: a two-card scene rendered with the compositor model
+  (previous frame + clip-confined region repaints, regions from
+  scene-kit's `DamageTracker`) is byte-identical to a full
+  re-render - the damage story is now backend-complete. `None`
+  passes the previous frame through untouched.
+- Frame A / damaged B / full B artifacts written per run for device
+  inspection.
+
 ## 0.4.5 (2026-11-06)
 
 Phase 4.1: clip support on the sparse-strip backend.

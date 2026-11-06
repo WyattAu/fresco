@@ -81,6 +81,10 @@ Phase 2 earns it.
   rect intersection for rect/gradient draws, clip layers for corner-
   cutting round rects; clipped-sequence parity holds the one-step
   oracle with zero budget.
+- 2026-11-06: strip-backend damage proof (0.4.6): the compositor
+  model (previous frame + clip-confined region repaints) is byte-
+  identical to a full render on the strip pipeline - the damage story
+  is backend-complete. Phase 4.1 headless work closed.
 
 ## 3. Phases
 

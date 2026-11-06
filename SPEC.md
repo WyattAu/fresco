@@ -76,8 +76,11 @@ A lower layer must never name a higher layer's types.
   corner-arc band (measured 0.72%, budget 2%) where independent curve
   flattening may diverge. Clipped sequences (band, gradient window,
   nested intersection) hold the one-step oracle with zero budget. The
-  harness rejects a deliberately wrong buffer.
-  Oracle: `cargo test -p render-conformance --features parity`.
+  harness rejects a deliberately wrong buffer. Damage-plan rendering
+  on the strip backend (regions blitted over the previous frame) is
+  byte-identical to a full re-render.
+  Oracle: `cargo test -p render-conformance --features parity` and
+  `cargo test -p paint-kit --features sparse-strip --test strip_damage`.
 - REQ-S1 (arena safety): stale generation handles return `None`; slots are
   reused with a bumped generation.
   Oracle: `cargo test -p scene-kit arena_generations`.

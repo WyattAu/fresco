@@ -19,6 +19,9 @@ vello_common = { version = "0.2", optional = true }
 default = []
 sparse-strip = ["dep:vello_cpu", "dep:vello_common"]
 
+[dev-dependencies]
+scene-kit = { workspace = true }
+
 [lints.rust]
 missing_docs = "deny"
 unsafe_code = "forbid"
