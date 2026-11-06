@@ -12,6 +12,7 @@ exclude = ["/target"]
 
 [dependencies]
 layout-kit = { workspace = true }
+scene-kit = { workspace = true }
 paint-kit = { workspace = true }
 text-kit = { workspace = true }
 theme-kit = "0.1.1"

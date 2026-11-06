@@ -101,6 +101,8 @@ Traceability for the fresco engine. REQ identifiers match `SPEC.md` section
   row keyboard nav, a11y selection.
 - REQ-K14 Select: click open/commit/close, arrow stepping with
   immediate commit, a11y ComboBox + selection.
+- REQ-K15 damage-plan rendering: FramePlan-driven repaint byte-equals
+  a full render; None is a no-op.
 
 ## R11 Process
 

@@ -191,6 +191,11 @@ A lower layer must never name a higher layer's types.
   an option click, ignores empty space; Up/Down open and step with
   immediate commit, Enter closes; the a11y name follows the selection.
   Oracle: `cargo test -p widget-kit --test select`.
+- REQ-K15 (damage): `paint_tree_plan` driven by a scene-kit
+  `FramePlan` reproduces a full re-render byte-identically (regions
+  are pixel-aligned at the rendering boundary), `None` leaves the
+  previous frame untouched, and `Full` equals `paint_tree`.
+  Oracle: `cargo test -p widget-kit --test damage`.
 
 ## 5. Coverage tier
 

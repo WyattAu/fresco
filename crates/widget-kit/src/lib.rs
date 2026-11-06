@@ -37,10 +37,12 @@ pub mod theme;
 pub use a11y::emit_a11y_tree;
 #[cfg(feature = "accesskit")]
 pub use accesskit_bridge::emit_accesskit_update;
-pub use render::{DrawListPainter, WidgetColors, WidgetRenderer, paint_tree};
+pub use render::{DrawListPainter, WidgetColors, WidgetRenderer, paint_tree, paint_tree_plan};
 
-pub use layout_kit::engine::Size2D;
-use layout_kit::engine::{NodeStyle, Rect2D};
+use layout_kit::engine::NodeStyle;
+
+// Re-exported: widget rects and sizes are layout geometry.
+pub use layout_kit::engine::{Rect2D, Size2D};
 use layout_kit::{Axis, FlowEngine, LayoutEngine};
 use std::vec::Vec;
 use text_kit::fake::FakeEngine;

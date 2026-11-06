@@ -1,5 +1,26 @@
 # CHANGELOG
 
+## 0.4.3 (2026-11-05)
+
+Phase 4.1: damage-plan rendering (headless form of damage-region
+re-encode).
+
+- `widget-kit`: `paint_tree_plan` - paint the tree constrained to a
+  scene-kit `FramePlan`. `Full` delegates to `paint_tree`; `None` is
+  a no-op; `Regions` paints once per non-overlapping region with the
+  painter clipped to it (scene-kit `take_plan` guarantees
+  non-overlap, so every pixel is drawn exactly once).
+- Rendering-boundary correctness detail the proof test caught: damage
+  clips are pixel-aligned (floor leading edges, ceil trailing edges) -
+  a widget edge at a fractional pixel blends into that pixel on a full
+  render, and a sub-pixel scissor would leave stale bytes behind.
+- Proof tests: a checkbox toggle and a tree-selection move repaint
+  byte-identical to full renders; a `None` plan provably leaves the
+  frame untouched; region mode produces at most two regions for a
+  one-widget change (no full-repaint fallback).
+- `Rect2D` is now re-exported from widget-kit (widget rects are
+  layout geometry).
+
 ## 0.4.2 (2026-11-05)
 
 Phase 4.3 groundwork: rounded-rect fills on both backends.

@@ -8,7 +8,8 @@
 
 use crate::{WidgetKind, WidgetRef, WidgetTree};
 use layout_kit::engine::Rect2D;
-use paint_kit::{Paint, Painter, Solid, Surface};
+use paint_kit::{Paint, Painter, Rect, Solid, Surface};
+use scene_kit::FramePlan;
 use text_kit::microfont;
 
 /// Paints widgets onto a target. Object-safe; consumers may implement
@@ -438,6 +439,45 @@ impl WidgetRenderer for DrawListPainter<'_> {
 
 /// Paint a whole tree: root panel, then widgets back-to-front. A root
 /// ScrollPane clips and translates its children.
+/// Paint the tree constrained to a scene-kit damage plan.
+///
+/// [`FramePlan::Full`] behaves like [`paint_tree`]; [`FramePlan::None`]
+/// is a no-op (the surface keeps the previous frame); [`FramePlan::Regions`]
+/// paints the whole tree once per region with the painter clipped to
+/// that region. `take_plan` emits non-overlapping regions, so every
+/// pixel is drawn exactly once and the result is byte-identical to a
+/// full re-render (proven by `tests/damage.rs`).
+pub fn paint_tree_plan(
+    tree: &WidgetTree,
+    surface: &mut Surface,
+    painter: &mut Painter,
+    colors: &WidgetColors,
+    plan: &FramePlan,
+) {
+    match plan {
+        FramePlan::None => {}
+        FramePlan::Full => paint_tree(tree, surface, painter, colors),
+        FramePlan::Regions(regions) => {
+            for region in regions {
+                // Pixel-align the clip: a widget rect edge at a
+                // fractional pixel still blends into that pixel on a
+                // full render, so the damage clip must include it
+                // (floor the leading edges, ceil the trailing ones).
+                let clip = Rect {
+                    x0: region.x0.floor(),
+                    y0: region.y0.floor(),
+                    x1: region.x1.ceil(),
+                    y1: region.y1.ceil(),
+                };
+                painter.push_clip(clip);
+                paint_tree(tree, surface, painter, colors);
+                painter.pop_clip();
+            }
+        }
+    }
+}
+
+/// Paint the whole tree: root panel fill, then every widget.
 pub fn paint_tree(
     tree: &WidgetTree,
     surface: &mut Surface,

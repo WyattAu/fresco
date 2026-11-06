@@ -68,6 +68,11 @@ Phase 2 earns it.
   cubics vs kurbo RoundedRect on the strip pipeline; interior pixels
   hold one-step parity, corner arcs under an explicit 2% budget
   (measured 0.72%). First 4.3 chrome primitive.
+- 2026-11-05: damage-plan rendering (0.4.3, 4.1): paint_tree_plan
+  driven by scene-kit FramePlan - damaged repaint byte-identical to
+  full render with pixel-aligned region clips; None is a no-op. This
+  is the headless form of damage-region re-encode; the strip backend
+  consumes the same plan when a compositor drives it.
 
 ## 3. Phases
 
