@@ -29,6 +29,16 @@ fn rasterizer_settings() -> RasterizerSettings {
     }
 }
 
+/// Effective clip state for the next [`StripTarget`] draw.
+enum ClipState {
+    /// No clip: draws are unconstrained.
+    None,
+    /// Clip empties the region: draws are suppressed.
+    Empty,
+    /// Intersected active clip rect.
+    Rect(Rect),
+}
+
 /// One render target on the sparse-strip pipeline.
 ///
 /// Draw with [`StripTarget::fill_rect`], then read the composited
@@ -40,6 +50,7 @@ pub struct StripTarget {
     pixmap: Pixmap,
     width: u16,
     height: u16,
+    clips: Vec<Option<Rect>>,
 }
 
 impl StripTarget {
@@ -66,6 +77,7 @@ impl StripTarget {
             pixmap: Pixmap::new(w, h),
             width: w,
             height: h,
+            clips: Vec::new(),
         })
     }
 
@@ -81,10 +93,60 @@ impl StripTarget {
         self.height
     }
 
+    /// Push an axis-aligned clip that intersects the active clip.
+    /// Every draw is confined to the active clip until [`Self::pop_clip`]
+    /// (implemented with vello clip layers per draw, which matches the
+    /// CPU painter's intersecting scissor semantics).
+    pub fn push_clip(&mut self, rect: Rect) {
+        // A `None` entry on the stack means an EMPTY clip (draws
+        // suppressed), not the absence of clipping.
+        let next = match self.clips.last() {
+            Some(None) => None,
+            Some(Some(active)) => active.intersect(rect),
+            None => Some(rect),
+        };
+        self.clips.push(next);
+    }
+
+    /// Pop the most recent clip.
+    pub fn pop_clip(&mut self) {
+        self.clips.pop();
+    }
+
+    /// The effective clip state for the next draw.
+    fn active_clip(&self) -> ClipState {
+        match self.clips.last() {
+            // No clip pushed: draw unconstrained.
+            None => ClipState::None,
+            // Empty clip: suppress the draw entirely.
+            Some(None) => ClipState::Empty,
+            Some(Some(clip)) => ClipState::Rect(*clip),
+        }
+    }
+
+    /// Intersect a draw rect with the active clip. Axis-aligned rect
+    /// draws scissor exactly by shrinking the rect: the gradient or
+    /// solid stays in device space, and coverage is identical to a
+    /// clip layer without one. `None` = fully clipped away.
+    fn scissored(&self, rect: Rect) -> Option<Rect> {
+        match self.active_clip() {
+            ClipState::None => Some(rect),
+            ClipState::Empty => None,
+            ClipState::Rect(clip) => clip.intersect(rect),
+        }
+    }
+
+    fn rect_contains(outer: Rect, inner: Rect) -> bool {
+        outer.x0 <= inner.x0 && outer.y0 <= inner.y0 && outer.x1 >= inner.x1 && outer.y1 >= inner.y1
+    }
+
     /// Fill an axis-aligned rect with a straight (non-premultiplied)
     /// RGBA8 color. Same draw-call shape as
     /// [`crate::Painter::fill_rect`].
     pub fn fill_rect(&mut self, rect: Rect, color: [u8; 4]) {
+        let Some(rect) = self.scissored(rect) else {
+            return;
+        };
         self.ctx.set_paint(vello_cpu::color::AlphaColor::from_rgba8(
             color[0], color[1], color[2], color[3],
         ));
@@ -126,6 +188,9 @@ impl StripTarget {
             extend: vello_common::peniko::Extend::Pad,
             ..Default::default()
         };
+        let Some(rect) = self.scissored(rect) else {
+            return;
+        };
         self.ctx.set_paint(gradient);
         self.ctx
             .fill_rect(&KRect::new(rect.x0, rect.y0, rect.x1, rect.y1));
@@ -154,6 +219,9 @@ impl StripTarget {
             extend: vello_common::peniko::Extend::Pad,
             ..Default::default()
         };
+        let Some(rect) = self.scissored(rect) else {
+            return;
+        };
         self.ctx.set_paint(gradient);
         self.ctx
             .fill_rect(&KRect::new(rect.x0, rect.y0, rect.x1, rect.y1));
@@ -163,13 +231,39 @@ impl StripTarget {
     /// clamped to half the shorter side) with a straight RGBA8 color.
     /// Same geometry as [`crate::Painter::fill_round_rect`].
     pub fn fill_round_rect(&mut self, rect: Rect, radius: f64, color: [u8; 4]) {
+        // A rounded rect's corners can be cut by a clip, so rect
+        // intersection is not enough when the clip is partial: draw
+        // under a clip layer in that case, directly when the clip
+        // contains the shape, and not at all when it is disjoint.
         let r = radius.clamp(0.0, rect.width().min(rect.height()) * 0.5);
         let krect = KRect::new(rect.x0, rect.y0, rect.x1, rect.y1);
         let shape = vello_cpu::kurbo::RoundedRect::from_rect(krect, r);
-        self.ctx.set_paint(vello_cpu::color::AlphaColor::from_rgba8(
-            color[0], color[1], color[2], color[3],
-        ));
-        self.ctx.fill_path(&shape.to_path(0.1));
+        let path = shape.to_path(0.1);
+        match self.active_clip() {
+            ClipState::Empty => {}
+            ClipState::None => {
+                self.ctx.set_paint(vello_cpu::color::AlphaColor::from_rgba8(
+                    color[0], color[1], color[2], color[3],
+                ));
+                self.ctx.fill_path(&path);
+            }
+            ClipState::Rect(clip) => {
+                if Self::rect_contains(clip, rect) {
+                    self.ctx.set_paint(vello_cpu::color::AlphaColor::from_rgba8(
+                        color[0], color[1], color[2], color[3],
+                    ));
+                    self.ctx.fill_path(&path);
+                } else if clip.intersect(rect).is_some() {
+                    let clip_path = KRect::new(clip.x0, clip.y0, clip.x1, clip.y1).to_path(0.1);
+                    self.ctx.push_clip_path(&clip_path);
+                    self.ctx.set_paint(vello_cpu::color::AlphaColor::from_rgba8(
+                        color[0], color[1], color[2], color[3],
+                    ));
+                    self.ctx.fill_path(&path);
+                    self.ctx.pop_clip_path();
+                }
+            }
+        }
     }
 
     /// Flush the command stream and composite into the internal
@@ -278,6 +372,77 @@ mod tests {
         // The square corner sits outside the rounded outline.
         let corner = px(0, 0).unwrap_or_default();
         assert_eq!(corner[3], 0, "square corner must be empty: {corner:?}");
+    }
+
+    #[test]
+    fn clip_confines_draws_to_the_region() {
+        let Some(mut t) = StripTarget::new(20, 4) else {
+            return;
+        };
+        t.push_clip(Rect {
+            x0: 0.0,
+            y0: 0.0,
+            x1: 10.0,
+            y1: 4.0,
+        });
+        t.fill_rect(
+            Rect {
+                x0: 0.0,
+                y0: 0.0,
+                x1: 20.0,
+                y1: 4.0,
+            },
+            [10, 200, 90, 255],
+        );
+        t.pop_clip();
+        let bytes = t.composite();
+        let inside: Vec<u8> = bytes.iter().take(4).copied().collect();
+        assert_eq!(
+            inside,
+            [10, 200, 90, 255],
+            "inside the clip must draw: {inside:?}"
+        );
+        let outside: Vec<u8> = bytes.iter().skip(12 * 4).take(4).copied().collect();
+        assert!(
+            outside.iter().all(|b| *b == 0),
+            "outside the clip must stay transparent: {outside:?}"
+        );
+    }
+
+    #[test]
+    fn disjoint_clip_makes_draws_no_op() {
+        let Some(mut t) = StripTarget::new(4, 4) else {
+            return;
+        };
+        t.push_clip(Rect {
+            x0: 0.0,
+            y0: 0.0,
+            x1: 2.0,
+            y1: 2.0,
+        });
+        // Intersecting with a disjoint rect yields an empty clip.
+        t.push_clip(Rect {
+            x0: 3.0,
+            y0: 3.0,
+            x1: 4.0,
+            y1: 4.0,
+        });
+        t.fill_rect(
+            Rect {
+                x0: 0.0,
+                y0: 0.0,
+                x1: 4.0,
+                y1: 4.0,
+            },
+            [255, 0, 0, 255],
+        );
+        t.pop_clip();
+        t.pop_clip();
+        let bytes = t.composite();
+        assert!(
+            bytes.iter().all(|b| *b == 0),
+            "an empty clip must suppress the draw"
+        );
     }
 
     #[test]

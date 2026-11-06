@@ -1,5 +1,23 @@
 # CHANGELOG
 
+## 0.4.5 (2026-11-06)
+
+Phase 4.1: clip support on the sparse-strip backend.
+
+- `StripTarget::push_clip`/`pop_clip`: an intersecting clip stack.
+  Axis-aligned rect draws (solids and gradients) scissor exactly by
+  rect intersection - the paint stays in device space and coverage is
+  identical to a clip layer; rounded rects draw under a vello clip
+  layer when the clip cuts corners, directly when the clip contains
+  the shape, and not at all when disjoint. This is the machinery the
+  damage-plan path needs to drive the alternative backend.
+- Parity: clipped sequences (solid band, gradient window, nested
+  intersection) hold the one-step oracle with zero budget; clip BMP
+  artifacts written per run.
+- Unit tests: clip confinement, disjoint-clip suppression (an empty
+  clip entry is distinct from no clip - the first cut got this
+  backwards and the test caught it).
+
 ## 0.4.4 (2026-11-06)
 
 Phase 4.3: rounded corners reach the stock widget chrome.

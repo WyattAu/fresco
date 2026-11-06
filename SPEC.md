@@ -74,8 +74,9 @@ A lower layer must never name a higher layer's types.
   reference on a shared fixture of solid, linear/radial-gradient, and
   rounded-rect draws: interior pixels within one channel step, and a
   corner-arc band (measured 0.72%, budget 2%) where independent curve
-  flattening may diverge. The harness rejects a deliberately wrong
-  buffer.
+  flattening may diverge. Clipped sequences (band, gradient window,
+  nested intersection) hold the one-step oracle with zero budget. The
+  harness rejects a deliberately wrong buffer.
   Oracle: `cargo test -p render-conformance --features parity`.
 - REQ-S1 (arena safety): stale generation handles return `None`; slots are
   reused with a bumped generation.

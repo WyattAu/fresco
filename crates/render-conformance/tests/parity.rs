@@ -201,6 +201,120 @@ fn sparse_strip_matches_cpu_reference_within_tolerance() {
 }
 
 #[test]
+fn clipped_draws_match_cpu_reference() {
+    // Clipped sequences: a solid clipped to a band, a device-space
+    // gradient clipped to a window, and a nested clip (intersect).
+    // Rect clips have no corners, so the strict oracle holds with no
+    // budget.
+    let band = path_kit::Rect::from_points(
+        path_kit::Vec2::new(12.0, 6.0),
+        path_kit::Vec2::new(28.0, 58.0),
+    );
+    let window = path_kit::Rect::from_points(
+        path_kit::Vec2::new(40.0, 8.0),
+        path_kit::Vec2::new(84.0, 40.0),
+    );
+    let outer = path_kit::Rect::from_points(
+        path_kit::Vec2::new(56.0, 30.0),
+        path_kit::Vec2::new(92.0, 60.0),
+    );
+    let inner = path_kit::Rect::from_points(
+        path_kit::Vec2::new(64.0, 44.0),
+        path_kit::Vec2::new(96.0, 64.0),
+    );
+    let big = path_kit::Rect::from_points(
+        path_kit::Vec2::new(0.0, 0.0),
+        path_kit::Vec2::new(96.0, 64.0),
+    );
+    let grad = paint_kit::LinearGradient::new(
+        path_kit::Vec2::new(40.0, 8.0),
+        path_kit::Vec2::new(84.0, 40.0),
+        vec![
+            paint_kit::ColorStop {
+                offset: 0.0,
+                color: [30, 60, 140, 255],
+            },
+            paint_kit::ColorStop {
+                offset: 1.0,
+                color: [200, 220, 250, 255],
+            },
+        ],
+    );
+
+    let mut cpu = Surface::new(WIDTH, HEIGHT).unwrap_or_default();
+    let mut painter = Painter::default();
+    painter.push_clip(band);
+    painter.fill_rect(
+        &mut cpu,
+        big,
+        &paint_kit::Paint::from(Solid::new([90, 30, 160, 255])),
+    );
+    painter.pop_clip();
+    painter.push_clip(window);
+    painter.fill_rect(&mut cpu, big, &paint_kit::Paint::from(grad.clone()));
+    painter.pop_clip();
+    painter.push_clip(outer);
+    painter.push_clip(inner);
+    painter.fill_rect(
+        &mut cpu,
+        big,
+        &paint_kit::Paint::from(Solid::new([240, 170, 40, 255])),
+    );
+    painter.pop_clip();
+    painter.pop_clip();
+
+    let Some(mut target) = paint_kit::StripTarget::new(96, 64) else {
+        return;
+    };
+    target.push_clip(band);
+    target.fill_rect(big, [90, 30, 160, 255]);
+    target.pop_clip();
+    target.push_clip(window);
+    // Same stops as the CPU side's `grad`.
+    target.fill_linear(
+        big,
+        (40.0, 8.0),
+        (84.0, 40.0),
+        &[(0.0, [30, 60, 140, 255]), (1.0, [200, 220, 250, 255])],
+    );
+    target.pop_clip();
+    target.push_clip(outer);
+    target.push_clip(inner);
+    target.fill_rect(big, [240, 170, 40, 255]);
+    target.pop_clip();
+    target.pop_clip();
+    let mut strip = Surface::new(WIDTH, HEIGHT).unwrap_or_default();
+    if paint_kit::strip_into_surface(&mut target, &mut strip).is_none() {
+        return;
+    }
+
+    let cfg = CompareConfig {
+        max_channel_delta: 1,
+        max_mismatch_frac: 0.0,
+    };
+    match compare(&as_ref(&cpu), &as_ref(&strip), cfg) {
+        Ok(report) => {
+            println!(
+                "clip parity ok: mismatch_frac={:.5} max_delta={}",
+                report.mismatch_frac, report.max_delta
+            );
+            let dir = Path::new("/tmp/opencode");
+            let _ = write_bmp(&dir.join("parity-clip-cpu.bmp"), &as_ref(&cpu));
+            let _ = write_bmp(&dir.join("parity-clip-strip.bmp"), &as_ref(&strip));
+        }
+        Err(mismatch) => {
+            let dir = Path::new("/tmp/opencode");
+            let _ = write_bmp(&dir.join("parity-clip-cpu.bmp"), &as_ref(&cpu));
+            let _ = write_bmp(&dir.join("parity-clip-strip.bmp"), &as_ref(&strip));
+            panic!(
+                "clipped parity failed: mismatch_frac={:.5} max_delta={} first={:?}",
+                mismatch.report.mismatch_frac, mismatch.report.max_delta, mismatch.first
+            );
+        }
+    }
+}
+
+#[test]
 fn parity_harness_catches_wrong_pixels() {
     // Sanity: the compare oracle must flag a deliberately different
     // buffer, so a pass above cannot be vacuous.

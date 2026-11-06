@@ -77,6 +77,10 @@ Phase 2 earns it.
   rounded with ring-inside-rect focus (damage invariant preserved);
   gallery re-bootstrapped; parity fixture verified on a phone screen
   end to end.
+- 2026-11-06: clip stacks on the strip backend (0.4.5): scissor-exact
+  rect intersection for rect/gradient draws, clip layers for corner-
+  cutting round rects; clipped-sequence parity holds the one-step
+  oracle with zero budget.
 
 ## 3. Phases
 
