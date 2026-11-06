@@ -90,6 +90,11 @@ Phase 2 earns it.
   strip side will wire vello's native fill_blurred_rounded_rect.
   Widget-chrome integration deferred until shadowed widgets carry an
   inflated damage extent.
+- 2026-11-06: shadow stage 2 (0.4.8): StripTarget::fill_shadow_round_rect
+  via vello's native analytic gaussian, clip-stack aware. Shadows stay
+  out of the per-pixel parity gate by documented design (50%-at-edge
+  convolution vs 100%-at-edge SDF); structural falloff tests on both
+  backends.
 
 ## 3. Phases
 

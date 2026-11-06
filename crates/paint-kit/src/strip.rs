@@ -266,6 +266,42 @@ impl StripTarget {
         }
     }
 
+    /// Fill a soft drop shadow under an axis-aligned rounded rect
+    /// using vello's native analytic gaussian
+    /// (`fill_blurred_rounded_rect`). Same extent convention as
+    /// [`crate::Painter::fill_shadow_round_rect`]: the shadow extends
+    /// ~3σ beyond the rect. Note the edge behavior differs from the
+    /// CPU reference (vello's convolution gives 50% coverage at the
+    /// silhouette edge; the CPU SDF starts at 100%), so shadows are
+    /// deliberately excluded from the per-pixel parity gate and
+    /// verified structurally instead.
+    pub fn fill_shadow_round_rect(&mut self, rect: Rect, radius: f64, sigma: f64, color: [u8; 4]) {
+        let r = radius.clamp(0.0, rect.width().min(rect.height()) * 0.5) as f32;
+        let sigma = sigma.max(0.01) as f32;
+        let krect = KRect::new(rect.x0, rect.y0, rect.x1, rect.y1);
+        let paint =
+            vello_cpu::color::AlphaColor::from_rgba8(color[0], color[1], color[2], color[3]);
+        let path = krect.to_path(0.1);
+        match self.active_clip() {
+            ClipState::Empty => {}
+            ClipState::None => {
+                self.ctx.set_paint(paint);
+                self.ctx.fill_blurred_rounded_rect(&krect, r, sigma, false);
+            }
+            ClipState::Rect(clip) => {
+                if Self::rect_contains(clip, rect) {
+                    self.ctx.set_paint(paint);
+                    self.ctx.fill_blurred_rounded_rect(&krect, r, sigma, false);
+                } else if clip.intersect(rect).is_some() {
+                    self.ctx.push_clip_path(&path);
+                    self.ctx.set_paint(paint);
+                    self.ctx.fill_blurred_rounded_rect(&krect, r, sigma, false);
+                    self.ctx.pop_clip_path();
+                }
+            }
+        }
+    }
+
     /// Flush the command stream and composite into the internal
     /// premultiplied RGBA8 buffer (replace mode: the pixmap is cleared
     /// and re-rendered from the full command stream, so repeated calls
@@ -443,6 +479,63 @@ mod tests {
             bytes.iter().all(|b| *b == 0),
             "an empty clip must suppress the draw"
         );
+    }
+
+    #[test]
+    fn shadow_falls_off_outside_the_rect() {
+        let Some(mut t) = StripTarget::new(80, 40) else {
+            return;
+        };
+        // Shadow of a centered card, sigma = 4.
+        t.fill_shadow_round_rect(
+            Rect {
+                x0: 20.0,
+                y0: 10.0,
+                x1: 60.0,
+                y1: 30.0,
+            },
+            8.0,
+            4.0,
+            [0, 0, 0, 255],
+        );
+        let bytes = t.composite();
+        let alpha = |x: usize, y: usize| -> u8 {
+            let base = (y * 80 + x) * 4 + 3;
+            bytes.get(base).copied().unwrap_or(0)
+        };
+        // Just outside the right edge: the falloff is present.
+        let near = alpha(66, 20);
+        assert!(near > 0, "falloff must be visible near the edge");
+        // Far outside (4 sigma past the edge at 2.5-sigma vello cutoff):
+        // fully transparent.
+        let far = alpha(78, 20);
+        assert_eq!(far, 0, "beyond the cutoff the shadow is empty: {far}");
+        // Monotonic decrease moving away from the edge.
+        let a1 = alpha(62, 20);
+        let a2 = alpha(64, 20);
+        assert!(a1 >= a2, "falloff must decrease outward: {a1} -> {a2}");
+    }
+
+    #[test]
+    fn shadow_center_is_opaque() {
+        let Some(mut t) = StripTarget::new(40, 40) else {
+            return;
+        };
+        t.fill_shadow_round_rect(
+            Rect {
+                x0: 5.0,
+                y0: 5.0,
+                x1: 35.0,
+                y1: 35.0,
+            },
+            6.0,
+            3.0,
+            [50, 60, 70, 255],
+        );
+        let bytes = t.composite();
+        let base = (20 * 40 + 20) * 4 + 3;
+        let a = bytes.get(base).copied().unwrap_or(0);
+        assert_eq!(a, 255, "shadow center must be fully opaque: {a}");
     }
 
     #[test]

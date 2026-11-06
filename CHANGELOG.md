@@ -1,5 +1,20 @@
 # CHANGELOG
 
+## 0.4.8 (2026-11-06)
+
+Phase 4.3: shadow stage 2 - the strip backend.
+
+- `StripTarget::fill_shadow_round_rect`: vello's native analytic
+  gaussian (`fill_blurred_rounded_rect`) with the same extent and
+  sigma conventions as the CPU reference; respects the clip stack
+  (contained draws run directly, corner-cutting draws under a clip
+  layer, disjoint suppressed).
+- Shadows remain excluded from the per-pixel parity gate by
+  documented design: vello's convolution gives 50% coverage at the
+  silhouette edge while the CPU SDF starts at 100% - structurally
+  verified instead (falloff present near the edge, monotonic outward,
+  transparent beyond the cutoff, opaque center).
+
 ## 0.4.7 (2026-11-06)
 
 Phase 4.3: SDF shadow primitive (CPU reference).
