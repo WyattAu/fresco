@@ -1,5 +1,24 @@
 # CHANGELOG
 
+## 0.4.4 (2026-11-06)
+
+Phase 4.3: rounded corners reach the stock widget chrome.
+
+- `button_frame` and the `select` header draw rounded (r = 6) with a
+  ring-inside-the-rect focus style: the fill insets 1.5 px and the
+  focus-ring color shows as a border within the widget rect. This
+  preserves the damage invariant that a widget paints strictly inside
+  its rect (nothing bleeds into neighbors).
+- Checkbox, tabs, tree rows, and select option rows stay sharp-corner
+  (they tile or are too small for corners to read); borders on sharp
+  widgets unchanged.
+- Gallery golden hashes re-bootstrapped (button/select chrome
+  changed). CVD per-widget and damage proof tests pass unchanged -
+  focus distinctness and damage correctness survive the restyle.
+- Parity fixture + gallery BMP/PNG artifacts pushed to a phone
+  screen: rounded corners, gradient ramps, and blends visually
+  confirmed end to end.
+
 ## 0.4.3 (2026-11-05)
 
 Phase 4.1: damage-plan rendering (headless form of damage-region

@@ -140,6 +140,15 @@ impl DrawListPainter<'_> {
         );
     }
 
+    fn fill_round(&mut self, rect: Rect2D, radius: f64, color: [u8; 4]) {
+        self.painter.fill_round_rect(
+            self.surface,
+            into_rect(rect),
+            radius,
+            &Paint::from(Solid::premul(color)),
+        );
+    }
+
     fn border(&mut self, rect: Rect2D, thickness: f64, color: [u8; 4]) {
         let t = thickness.max(1.0);
         let edges = [
@@ -171,6 +180,16 @@ impl DrawListPainter<'_> {
         for edge in edges {
             self.fill(edge, color);
         }
+    }
+}
+
+/// Shrink (positive) or grow (negative) a rect on all sides.
+fn inflate(rect: Rect2D, d: f64) -> Rect2D {
+    Rect2D {
+        x: rect.x + d,
+        y: rect.y + d,
+        width: (rect.width - 2.0 * d).max(0.0),
+        height: (rect.height - 2.0 * d).max(0.0),
     }
 }
 
@@ -285,7 +304,12 @@ impl WidgetRenderer for DrawListPainter<'_> {
             width: rect.width,
             height: crate::SELECT_HEADER_H.min(rect.height),
         };
-        self.fill(header, colors.button);
+        if focused {
+            self.fill_round(header, 6.0, colors.focus_ring);
+            self.fill_round(inflate(header, -1.5), 4.5, colors.button);
+        } else {
+            self.fill_round(header, 6.0, colors.button);
+        }
         let label = options
             .get(selected)
             .map(|s| format!(" {s} v"))
@@ -362,12 +386,17 @@ impl WidgetRenderer for DrawListPainter<'_> {
     }
 
     fn button_frame(&mut self, rect: Rect2D, colors: &WidgetColors, focused: bool, pressed: bool) {
-        self.fill(rect, colors.button);
-        if pressed {
-            self.fill(rect, colors.pressed_overlay);
-        }
+        // Rounded corners; when focused the fill insets so the ring
+        // color shows as a border INSIDE the widget rect (damage
+        // regions are the widget rect - nothing may paint outside).
         if focused {
-            self.border(rect, 2.0, colors.focus_ring);
+            self.fill_round(rect, 6.0, colors.focus_ring);
+            self.fill_round(inflate(rect, -1.5), 4.5, colors.button);
+        } else {
+            self.fill_round(rect, 6.0, colors.button);
+        }
+        if pressed {
+            self.fill_round(rect, 6.0, colors.pressed_overlay);
         }
     }
 

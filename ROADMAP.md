@@ -73,6 +73,10 @@ Phase 2 earns it.
   full render with pixel-aligned region clips; None is a no-op. This
   is the headless form of damage-region re-encode; the strip backend
   consumes the same plan when a compositor drives it.
+- 2026-11-06: rounded chrome (0.4.4): buttons and select headers draw
+  rounded with ring-inside-rect focus (damage invariant preserved);
+  gallery re-bootstrapped; parity fixture verified on a phone screen
+  end to end.
 
 ## 3. Phases
 
