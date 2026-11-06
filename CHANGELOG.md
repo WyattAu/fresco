@@ -1,5 +1,20 @@
 # CHANGELOG
 
+## 0.4.7 (2026-11-06)
+
+Phase 4.3: SDF shadow primitive (CPU reference).
+
+- `Painter::fill_shadow_round_rect`: per-pixel signed distance to the
+  rounded-rect silhouette, alpha = exp(-d²/2σ²), composited as
+  premultiplied color. Extends 3σ beyond the rect; callers that clip
+  or damage-track must account for the extent. Three unit tests:
+  monotonic falloff, interior exactness, surface-bounds safety.
+- Showcase artifact rendered for device inspection. Widget-chrome
+  integration is deferred until shadowed widgets carry an inflated
+  damage extent (a shadow by definition paints outside the widget
+  rect); the sparse-strip side wires vello's native
+  `fill_blurred_rounded_rect` in a later slice.
+
 ## 0.4.6 (2026-11-06)
 
 Phase 4.1 close: damage-plan rendering on the strip backend.

@@ -145,6 +145,67 @@ impl Painter {
         self.fill_path(surface, &path, Affine::IDENTITY, FillRule::NonZero, paint);
     }
 
+    /// Fill a soft drop shadow under an axis-aligned rounded rect
+    /// (roadmap 4.3 "SDF shadows"): per-pixel signed distance to the
+    /// rounded-rect silhouette, alpha = exp(-d²/(2σ²)) outside the
+    /// shape and 1 inside, composited as premultiplied `color`. The
+    /// shadow extends `3σ` beyond the rect in every direction; callers
+    /// that clip or damage-track must account for that extent.
+    ///
+    /// This is the CPU reference implementation; the sparse-strip
+    /// backend wires vello's native `fill_blurred_rounded_rect` for
+    /// the same visual (later slice).
+    pub fn fill_shadow_round_rect(
+        &mut self,
+        surface: &mut Surface,
+        rect: Rect,
+        radius: f64,
+        sigma: f64,
+        color: [u8; 4],
+    ) {
+        let sigma = sigma.max(0.01);
+        let premul = premultiply(color);
+        // Shadow region: the rect inflated by 3σ, clamped to the
+        // surface bounds.
+        let pad = 3.0 * sigma;
+        let x_min = (rect.x0 - pad).max(0.0).floor() as usize;
+        let y_min = (rect.y0 - pad).max(0.0).floor() as usize;
+        let x_max = (rect.x1 + pad).ceil().min(surface.rect().width()) as usize;
+        let y_max = (rect.y1 + pad).ceil().min(surface.rect().height()) as usize;
+        if x_max <= x_min || y_max <= y_min {
+            return;
+        }
+        let r = radius.clamp(0.0, rect.width().min(rect.height()) * 0.5);
+        let cx = (rect.x0 + rect.x1) * 0.5;
+        let cy = (rect.y0 + rect.y1) * 0.5;
+        let hx = rect.width() * 0.5 - r;
+        let hy = rect.height() * 0.5 - r;
+        let inv = 1.0 / (2.0 * sigma * sigma);
+        for py in y_min..y_max {
+            for px in x_min..x_max {
+                let pxf = f64::from(u32::try_from(px).unwrap_or(u32::MAX)) + 0.5;
+                let pyf = f64::from(u32::try_from(py).unwrap_or(u32::MAX)) + 0.5;
+                // Signed distance to the rounded rect (negative
+                // inside): abs form of the SDF with corner rounds.
+                let qx = (pxf - cx).abs() - hx;
+                let qy = (pyf - cy).abs() - hy;
+                let outer = qx.max(0.0).hypot(qy.max(0.0));
+                let d = (outer + qx.max(qy).min(0.0)).max(0.0);
+                let alpha = (-d * d * inv).exp();
+                if alpha < 0.004 {
+                    continue;
+                }
+                let blended = [
+                    ((f64::from(premul[0]) / 255.0) * alpha * 255.0).round() as u8,
+                    ((f64::from(premul[1]) / 255.0) * alpha * 255.0).round() as u8,
+                    ((f64::from(premul[2]) / 255.0) * alpha * 255.0).round() as u8,
+                    ((f64::from(premul[3]) / 255.0) * alpha * 255.0).round() as u8,
+                ];
+                surface.blend_pixel(px, py, blended);
+            }
+        }
+    }
+
     /// Fill a path under a transform.
     pub fn fill_path(
         &mut self,
@@ -654,6 +715,107 @@ mod tests {
             assert!(v >= prev, "non-monotone at {x}: {v} < {prev}");
             prev = v;
         }
+    }
+
+    #[test]
+    fn shadow_showcase_artifact_written() {
+        // Device-screen artifact: two shadowed gradient-ish cards on a
+        // dark surface (raw premultiplied RGBA8 for offline
+        // conversion; paint-kit has no image encoder).
+        let mut surface = Surface::new(200, 120).unwrap_or_default();
+        surface.fill_solid([16, 17, 22, 255]);
+        let mut painter = Painter::default();
+        painter.fill_shadow_round_rect(
+            &mut surface,
+            Rect::from_points(Vec2::new(20.0, 20.0), Vec2::new(90.0, 80.0)),
+            10.0,
+            4.0,
+            [0, 0, 0, 230],
+        );
+        painter.fill_round_rect(
+            &mut surface,
+            Rect::from_points(Vec2::new(20.0, 20.0), Vec2::new(90.0, 80.0)),
+            10.0,
+            &Paint::from(Solid::premul([36, 62, 140, 255])),
+        );
+        painter.fill_shadow_round_rect(
+            &mut surface,
+            Rect::from_points(Vec2::new(104.0, 36.0), Vec2::new(184.0, 96.0)),
+            10.0,
+            6.0,
+            [0, 0, 0, 230],
+        );
+        painter.fill_round_rect(
+            &mut surface,
+            Rect::from_points(Vec2::new(104.0, 36.0), Vec2::new(184.0, 96.0)),
+            10.0,
+            &Paint::from(Solid::premul([40, 140, 100, 255])),
+        );
+        let dir = std::path::Path::new("/tmp/opencode");
+        std::fs::create_dir_all(dir).ok();
+        std::fs::write(dir.join("shadow-showcase.rgba"), surface.data()).ok();
+    }
+
+    #[test]
+    fn shadow_alpha_falls_off_monotonically() {
+        let mut surface = Surface::new(80, 40).unwrap_or_default();
+        let mut painter = Painter::default();
+        painter.fill_shadow_round_rect(
+            &mut surface,
+            Rect::from_points(Vec2::new(20.0, 10.0), Vec2::new(60.0, 30.0)),
+            6.0,
+            3.0,
+            [0, 0, 0, 255],
+        );
+        // Sample along the outward normal past the right edge
+        // (x = 60 + d), y = 20 (the vertical middle).
+        let mut prev = 255_u8;
+        for (d, x) in [(0.0_f64, 59_usize), (1.0, 61), (2.0, 62), (4.0, 64)] {
+            let alpha = surface.pixel(x, 20).map(|p| p[3]).unwrap_or(0);
+            assert!(
+                alpha <= prev,
+                "alpha must fall off monotonically: d={d} alpha={alpha} prev={prev}"
+            );
+            prev = alpha;
+        }
+        // Far outside 3 sigma: fully transparent.
+        let far = surface.pixel(75, 20).map(|p| p[3]).unwrap_or(255);
+        assert_eq!(far, 0, "beyond 3 sigma the shadow is empty: {far}");
+    }
+
+    #[test]
+    fn shadow_inside_shape_is_opaque() {
+        let mut surface = Surface::new(60, 40).unwrap_or_default();
+        let mut painter = Painter::default();
+        painter.fill_shadow_round_rect(
+            &mut surface,
+            Rect::from_points(Vec2::new(10.0, 10.0), Vec2::new(50.0, 30.0)),
+            6.0,
+            3.0,
+            [10, 20, 30, 255],
+        );
+        // Deep inside the silhouette the distance is negative, so the
+        // alpha saturates at 1 and the premultiplied color is exact.
+        let c = surface.pixel(30, 20).unwrap_or([9, 9, 9, 9]);
+        assert_eq!(c, [10, 20, 30, 255], "interior must be exact: {c:?}");
+    }
+
+    #[test]
+    fn shadow_respects_surface_bounds() {
+        // A rect hanging off the canvas edge must not panic and must
+        // not write outside the surface (blend_pixel bounds-checks).
+        let mut surface = Surface::new(40, 20).unwrap_or_default();
+        let mut painter = Painter::default();
+        painter.fill_shadow_round_rect(
+            &mut surface,
+            Rect::from_points(Vec2::new(30.0, 5.0), Vec2::new(70.0, 15.0)),
+            4.0,
+            3.0,
+            [0, 0, 0, 200],
+        );
+        // Just sanity: the visible part carries some shadow.
+        let alpha = surface.pixel(35, 10).map(|p| p[3]).unwrap_or(0);
+        assert!(alpha > 0, "visible part must carry shadow: {alpha}");
     }
 
     #[test]

@@ -85,6 +85,11 @@ Phase 2 earns it.
   model (previous frame + clip-confined region repaints) is byte-
   identical to a full render on the strip pipeline - the damage story
   is backend-complete. Phase 4.1 headless work closed.
+- 2026-11-06: SDF shadow primitive (0.4.7, 4.3): CPU reference
+  rounded-rect drop shadow via signed distance + gaussian falloff;
+  strip side will wire vello's native fill_blurred_rounded_rect.
+  Widget-chrome integration deferred until shadowed widgets carry an
+  inflated damage extent.
 
 ## 3. Phases
 
