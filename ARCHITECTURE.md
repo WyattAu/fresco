@@ -12,7 +12,7 @@ decisions that bound this design.
 
 ## Data flow (steady-state frame)
 
-```
+```text
 input (future window-kit)
    |
 state mutation (app / future widget-kit)
@@ -37,7 +37,7 @@ u64 sort key packs `layer:depth:seq` so batching is a sort, not a tree walk.
 ## Own vs consume (the four ADRs)
 
 | Decision | ADR | Own | Consume |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Scene model | 0001 | retained scene + damage (fresco) | reactive layer later (widget-kit) |
 | Text | 0002 | `TextEngine` trait | `rustybuzz` + `parley` first behind it |
 | Windowing | 0003 | `window-kit` facade trait | `winit` first backend |

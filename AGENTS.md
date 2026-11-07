@@ -43,10 +43,10 @@ above 80 percent per published crate.
 8. `render-conformance` is `publish = false`. Never remove that.
 9. Names: crates keep the `-kit` suffix; no new top-level names without an
    ADR. On crates.io the bare names collide with third parties
-   (`path-kit` is owned by songhuaixu) — publish as `fresco-<name>`
+   (`path-kit` is owned by songhuaixu), so publish as `fresco-<name>`
    (package rename; keep the `-kit` lib names).
 10. The estate manifest (`engineering-standards/estate.yml`) records
-   `crates:` as packages **published on crates.io** — `estate-audit.py`
+   `crates:` as packages **published on crates.io**; `estate-audit.py`
    errors while an entry 404s. Add a crate to that list in the same
    commit as its publish; while unpublished, keep it in this file's
    Layout section only.
@@ -59,6 +59,19 @@ above 80 percent per published crate.
   layout-kit gains the `taffy` feature (default off).
 - `docs/adr/` decisions; `docs/paradigms.md` paradigm index (651 to 1050).
 - `SPEC.md` requirements and truth table. `REQUIREMENTS.md` traceability.
+
+## Where the truth lives
+
+| Question | Answer |
+| --- | --- |
+| Requirements and oracles | `SPEC.md` (REQ-P/A/S/L/R/C/K/T/W), oracle lines match test names |
+| Traceability index | `REQUIREMENTS.md` |
+| Decisions | `docs/adr/` |
+| Paradigm index (651 to 1050) | `docs/paradigms.md` |
+| Release history | `CHANGELOG.md` |
+| Layer map | `README.md` table + `ARCHITECTURE.md` |
+| Crate list (published) | `engineering-standards/estate.yml` `crates:` (this repo publishes as `fresco-*`) |
+| Layout engine contract | `layout-kit` `LayoutEngine` trait; taffy behind default-off feature |
 
 ## When adding a crate
 

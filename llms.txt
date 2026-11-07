@@ -2,18 +2,38 @@ fresco: modular retained-mode UI engine for Rust
 
 fresco: WyattAu estate UI engine. Crates: path-kit (L0 geometry),
 anim-kit (L0 closed-form springs), scene-kit (L1 retained scene, damage
-tracking), layout-kit (L1 incremental layout, no_std), paint-kit (L2 CPU
-raster: exact coverage + gradients + clip + images), window-kit (L2
-windowing facade, winit backend), text-kit (L2 TextEngine trait + atlas,
-Parley feature), render-conformance (L3 golden images, unpublished).
+tracking), layout-kit (L1 incremental layout, no_std, taffy feature),
+paint-kit (L2 CPU raster: exact coverage, linear/radial/sweep gradients,
+clip stack, images; sparse-strip feature = vello_cpu backend),
+window-kit (L2 windowing facade, winit backend), text-kit (L2
+TextEngine trait + atlas, Parley feature, 3x5 micro-font), widget-kit
+(retained widgets: label, button, checkbox, text field, select, tab
+list, tree list, scroll pane; CVD-audited theming, a11y emission,
+damage-plan rendering, strip-renderer feature), render-conformance (L3
+parity + golden images, unpublished).
 
-Spec: SPEC.md (REQ-P*, REQ-A*, REQ-S*, REQ-L*, REQ-R*, REQ-C*).
-Contract: AGENTS.md. Decisions: docs/adr/ADR-0001..0004.
-Paradigm index (651 to 1050): docs/paradigms.md.
+Spec: SPEC.md (REQ-P*, REQ-A*, REQ-S*, REQ-L*, REQ-R*, REQ-C*, REQ-K*,
+REQ-T*, REQ-W*). Contract: AGENTS.md. Decisions: docs/adr/ADR-0001..0004.
+Paradigm index (651 to 1050): docs/paradigms.md. Progress log: ROADMAP.md
+section 2b. Release history: CHANGELOG.md.
+
 Layering: L0 std zero-dep (layout-kit additionally no_std+alloc);
 L1 std, internal deps only; L2 std; L3 dev-only.
+
+Backends: CPU reference (painter.rs winding-integral rasterizer) is
+primary; sparse-strip (vello_cpu 0.2) is parity-gated per paint kind
+(solid/linear/radial/sweep/round-rect/clips) and widget-level (Gate C
+instrument: paint_tree_plan_with drives any renderer through the damage
+plan; measured settings-tree means: CPU 5.7 ms, strip 60.5 ms - strip
+cost dominated by micro-font-as-1x1-fills).
+
 Commands: cargo test --workspace --all-features; cargo clippy --workspace
---all-targets --all-features -- -D warnings; cargo fmt --all -- --check.
+--all-targets --all-features -- -D warnings (also +stable); cargo fmt --all
+-- --check. Phone artifact loop: tests write BMPs/rgba to /tmp/opencode.
+
 Rules: forbid(unsafe_code) everywhere; lints deny panic/unwrap/expect;
 indexing_slicing denied in src, allowed in test modules; MSRV 1.92;
-edition 2024.
+edition 2024. Shadows paint outside widget rects: damage regions must
+inflate by SHADOW_MARGIN (paint_tree_plan does). Publish as fresco-*
+(path-kit name is taken); estate.yml crates: list records published
+packages only.

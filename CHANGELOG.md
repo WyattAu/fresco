@@ -16,6 +16,20 @@ Gate C milestone: the backend swap is instrumented and measured.
   before any swap decision. Numbers reported, never asserted.
 - Workspace versions synced at 0.5.0.
 
+## 0.5.1 (2026-11-07)
+
+Docs-gate hygiene: estate doc-lint and spec-audit now PASS at tier k.
+
+- Em-dashes removed from AGENTS.md and the 0.4.x CHANGELOG entries
+  (DOC-STYLE section 1).
+- AGENTS.md gains the "Where the truth lives" table (SPEC-CORE
+  section 3); ARCHITECTURE.md fence gets a language and its table
+  matches the compact style.
+- llms.txt regenerated: crate list includes widget-kit (and the
+  strip-renderer + sparse-strip features), REQ families current
+  through REQ-K/T/W, backends section documents the Gate C
+  measurement, commands and rules current.
+
 ## 0.4.12 (2026-11-07)
 
 Phase 4.1 completion: widget-level rendering on the strip backend.
@@ -267,7 +281,7 @@ Phase 3.4 close: per-widget CVD verification.
 
 Phase 3: tree-lite widget.
 
-- `widget-kit`: `TreeList` — flat rows with depth and expand state;
+- `widget-kit`: `TreeList` (flat rows with depth and expand state);
   visibility derived (a row shows only when every ancestor is
   expanded), so collapsed subtrees vanish from rendering, hit testing,
   and keyboard selection alike. Click selects + toggles (empty space
@@ -280,7 +294,7 @@ Phase 3: tree-lite widget.
 
 Phase 3: text rendering path.
 
-- `text-kit`: 3×5 micro-font covering all printable ASCII —
+- `text-kit`: 3×5 micro-font covering all printable ASCII:
   deterministic per-character coverage bitmaps, integer scaling, glyph
   ids aligned with the FakeEngine shaper.
 - `widget-kit`: `WidgetRenderer::label_text` blits micro-font glyphs
@@ -299,7 +313,7 @@ Phase 3 continued: ScrollPane and TabList.
   in the focus color). Both emit audited a11y roles (List, TabList) and
   render through the stock renderer with clip support.
 - `layout-kit`: flex overflow now follows CSS flex-shrink-0 semantics
-  (zero-shrink children keep their basis and overflow the container —
+  (zero-shrink children keep their basis and overflow the container, so
   the scroll-pane case) instead of the old even-reduction fallback.
 - `paint-kit`: Surface implements Default (1x1 transparent) for
   panic-free test fallbacks.

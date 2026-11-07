@@ -119,6 +119,8 @@ Phase 2 earns it.
   dominated by micro-font-as-1x1-fills; native glyph runs are the
   next lever). The swap decision itself stays with kestrel benches.
   Phase 4 headless work complete.
+- 2026-11-07: docs-gate hygiene (0.5.1): doc-lint and spec-audit PASS
+  at tier k (em-dashes, truth table, llms.txt regeneration).
 
 ## 3. Phases
 
