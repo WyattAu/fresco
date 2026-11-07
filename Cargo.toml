@@ -27,7 +27,7 @@ layout-kit = { path = "crates/layout-kit", version = "0.5.0" }
 paint-kit = { path = "crates/paint-kit", version = "0.5.0" }
 text-kit = { path = "crates/text-kit", version = "0.5.0" }
 window-kit = { path = "crates/window-kit", version = "0.5.0", default-features = false }
-criterion = "0.7"
+criterion = "0.8"
 
 [profile.release]
 lto = "fat"
