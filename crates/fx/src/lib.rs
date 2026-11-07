@@ -39,7 +39,10 @@ pub mod rand;
 pub mod text;
 
 pub use backgrounds::{DotPattern, FlickeringGrid, GridPattern, StarField};
-pub use charts::{BarChart, LineChart, Sparkline};
+pub use charts::{
+    AreaChart, BarChart, Candlestick, Correlation, Heatmap, Histogram, LineChart, Multiline,
+    Sparkline, StackedBar, Treemap, Waterfall,
+};
 pub use text::{CountUp, ScrambledText, ShimmerText};
 
 pub use rand::FxRand;
