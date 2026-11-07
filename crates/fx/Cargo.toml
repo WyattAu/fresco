@@ -1,0 +1,26 @@
+[package]
+name = "fx"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "The solid-fx and plychart capability catalog for the fresco UI engine: procedural backgrounds, animated text, charts"
+keywords = ["ui", "widgets", "effects", "charts", "graphics"]
+categories = ["graphics", "rendering"]
+
+[dependencies]
+paint-kit = { workspace = true }
+path-kit = { workspace = true }
+anim-kit = { workspace = true }
+text-kit = { workspace = true }
+
+[lints.rust]
+missing_docs = "deny"
+unsafe_code = "forbid"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"

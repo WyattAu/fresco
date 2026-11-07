@@ -139,6 +139,13 @@ Phase 2 earns it.
   60 Hz frame. Gate A verdict: definitively sufficient.
 - 2026-11-07: docs-gate hygiene (0.5.1): doc-lint and spec-audit PASS
   at tier k (em-dashes, truth table, llms.txt regeneration).
+- 2026-11-07: fx crate founded (0.5.3): the solid-fx + plychart
+  capability catalog as a fresco widget library - first nine
+  components (3 backgrounds, 3 text effects, 3 charts) with golden
+  gallery + determinism + FNV gates. Catalog: 240 items total
+  (solid-fx 218 + plychart 22); families land per release.
+  Capability-complete before kestrel, per the kestrel-first
+  migration plan.
 - 2026-11-07: Gate A soak (0.5.2): 3000 release frames - paint p50
   0.27 ms, p99 1.7 ms, 100.0% within budget (one 86 ms compositor
   hiccup, 0.03%). Gate A verdict definitive: winit pacing sufficient;

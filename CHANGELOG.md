@@ -81,6 +81,28 @@ Phase 4.1 completion: widget-level rendering on the strip backend.
 - The damage-plan path can now drive the strip backend with the real
   widget renderer.
 
+## 0.5.3 (2026-11-07)
+
+New crate `fx`: the solid-fx + plychart capability catalog lands in
+fresco.
+
+- First nine components across three families: backgrounds
+  (GridPattern, DotPattern, FlickeringGrid, StarField), text effects
+  (CountUp, ScrambledText, ShimmerText), charts (Sparkline, BarChart,
+  LineChart - geometry ported from plychart's conventions).
+- Architecture: parameter structs + deterministic
+  `draw(Fx, t)` methods; randomness from a seeded splitmix64 PRNG
+  (`FxRand`, `cell_hash`); text through the 3x5 micro-font; charts
+  via path-kit polygon fills. No OS randomness, no wall clock -
+  golden-galleried.
+- fx gallery: 9-component catalog grid, determinism-asserted,
+  FNV-golden-hashed (alpha + RGB), time-varying-output asserted,
+  BMP artifact written for device review.
+- Catalog target: solid-fx 218 components (TextAnimations 33,
+  Animations 38, Backgrounds 64, Components 48, Micro 35) + plychart
+  22 chart types. 9/240 shipped; families follow the same pattern in
+  subsequent releases.
+
 ## 0.5.2 (2026-11-07)
 
 Fresco inspector: tracing, frame capture, recording, and analysis.
