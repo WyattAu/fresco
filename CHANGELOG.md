@@ -1,5 +1,20 @@
 # CHANGELOG
 
+## 0.4.11 (2026-11-07)
+
+Phase 4.4 scaffolding: pacing instrumentation.
+
+- `widget-kit` gains a pacing harness: render a phone-proportioned
+  settings screen (360x640, every 3.2 control except the text field)
+  120 times through the CPU reference, assert all frames
+  byte-identical, and report mean/p50/p99/max wall-clock per frame
+  (printed, not asserted - the machine is shared and the present
+  path is out of scope until kestrel). Measured on the dev machine:
+  mean 6.5 ms, p50 5.2 ms, p99 24.8 ms.
+- The rendered screen doubles as the device showcase artifact: the
+  settings screen was pushed to a phone and visually verified
+  (micro-font labels legible on screen).
+
 ## 0.4.10 (2026-11-07)
 
 Phase 4.3: sweep gradients on both backends - gradient-kind oracle

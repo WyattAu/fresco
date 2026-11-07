@@ -102,6 +102,10 @@ Phase 2 earns it.
 - 2026-11-07: sweep gradients (0.4.10): SweepGradient on both
   backends; gradient-kind oracle coverage complete (solid, linear,
   radial, sweep). Strict parity holds at zero budget.
+- 2026-11-07: pacing scaffolding (0.4.11, 4.4): per-frame paint-time
+  stats (mean/p50/p99/max) over 120 byte-identical frames of a
+  360x640 settings screen; headless rasterization only - present-path
+  pacing waits for kestrel. Screen verified on a phone.
 
 ## 3. Phases
 
