@@ -11,12 +11,11 @@
 use std::time::Instant;
 
 use fx::{
-    BarChart, CountUp, DotPattern, FlickeringGrid, GridPattern, LineChart, ScrambledText,
-    ShimmerText, Sparkline, StarField,
+    BarChart, CountUp, FlickeringGrid, GridPattern, LineChart, ScrambledText, ShimmerText,
+    Sparkline, StarField,
 };
 use widget_kit::{TreeItem, WidgetColors, WidgetKind, WidgetTree, paint_tree};
 use window_kit::event::{Event, LogicalSize};
-use window_kit::inspector::Inspector;
 use window_kit::window::{EventSink, Window, WindowAttrs};
 use window_kit::winit_backend::WinitRunner;
 

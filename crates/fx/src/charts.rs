@@ -298,9 +298,10 @@ impl AreaChart {
         let n = self.series.len();
         let pts: Vec<Vec2> = (0..n)
             .map(|i| {
+                let v = self.series.get(i).copied().unwrap_or(min);
                 Vec2::new(
                     rect.x0 + (i as f64 / (n - 1) as f64) * w,
-                    rect.y0 + (1.0 - normalize(self.series[i], min, max)) * h,
+                    rect.y0 + (1.0 - normalize(v, min, max)) * h,
                 )
             })
             .collect();
@@ -347,13 +348,15 @@ impl Multiline {
                 .copied()
                 .unwrap_or([200, 200, 200, 255]);
             for i in 0..n - 1 {
+                let v0 = series.get(i).copied().unwrap_or(min);
+                let v1 = series.get(i + 1).copied().unwrap_or(min);
                 let p0 = Vec2::new(
                     rect.x0 + (i as f64 / (n - 1) as f64) * rect.width(),
-                    rect.y0 + (1.0 - normalize(series[i], min, max)) * rect.height(),
+                    rect.y0 + (1.0 - normalize(v0, min, max)) * rect.height(),
                 );
                 let p1 = Vec2::new(
                     rect.x0 + ((i + 1) as f64 / (n - 1) as f64) * rect.width(),
-                    rect.y0 + (1.0 - normalize(series[i + 1], min, max)) * rect.height(),
+                    rect.y0 + (1.0 - normalize(v1, min, max)) * rect.height(),
                 );
                 fill_poly(fx, &strip(p0, p1, 1.5), color);
             }
@@ -392,7 +395,9 @@ impl Histogram {
         let mut counts = vec![0_usize; self.bins];
         for v in &self.values {
             let b = (((v - min) / span) * self.bins as f64) as usize;
-            counts[b.min(self.bins - 1)] += 1;
+            if let Some(slot) = counts.get_mut(b.min(self.bins - 1)) {
+                *slot += 1;
+            }
         }
         let maxc = *counts.iter().max().unwrap_or(&1);
         let w = rect.width();
@@ -550,7 +555,9 @@ impl Heatmap {
         if rows == 0 {
             return;
         }
-        let cols = self.cells[0].len();
+        let Some(cols) = self.cells.first().map(Vec::len) else {
+            return;
+        };
         if cols == 0 {
             return;
         }
@@ -613,7 +620,9 @@ impl Correlation {
         if rows == 0 {
             return;
         }
-        let cols = self.cells[0].len();
+        let Some(cols) = self.cells.first().map(Vec::len) else {
+            return;
+        };
         if cols == 0 {
             return;
         }
@@ -737,15 +746,20 @@ impl Waterfall {
         let y_of = |v: f64| rect.y0 + (1.0 - (v - lo) / span) * rect.height();
         for (i, &s) in self.steps.iter().enumerate() {
             let x = rect.x0 + i as f64 * slot + (slot - bar_w) * 0.5;
-            let y0 = y_of(levels[i]);
-            let y1 = y_of(levels[i + 1]);
+            let (Some(&y0v), Some(&y1v)) = (levels.get(i), levels.get(i + 1)) else {
+                continue;
+            };
+            let y0 = y_of(y0v);
+            let y1 = y_of(y1v);
             let top = y0.min(y1);
             let h = (y1 - y0).abs().max(1.0);
             let color = if s >= 0.0 { self.gain } else { self.loss };
             fill_rect(fx, x, top, bar_w, h, color);
             // Connector to next level.
-            if i + 1 < n {
-                let cy = y_of(levels[i + 1]);
+            if i + 1 < n
+                && let Some(&cy) = levels.get(i + 1)
+            {
+                let cy = y_of(cy);
                 fill_rect(fx, x + bar_w, cy, slot - bar_w, 1.0, [120, 124, 136, 160]);
             }
         }
