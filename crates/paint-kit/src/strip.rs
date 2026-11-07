@@ -227,6 +227,31 @@ impl StripTarget {
             .fill_rect(&KRect::new(rect.x0, rect.y0, rect.x1, rect.y1));
     }
 
+    /// Fill with an angular sweep around `center` from `start_angle`
+    /// to `end_angle` (radians from +X, clockwise in Y-down); same
+    /// stop conventions as [`Self::fill_linear`].
+    pub fn fill_sweep(
+        &mut self,
+        rect: Rect,
+        center: (f64, f64),
+        start_angle: f32,
+        end_angle: f32,
+        stops: &[(f32, [u8; 4])],
+    ) {
+        let c = vello_cpu::kurbo::Point::new(center.0, center.1);
+        let gradient = vello_common::peniko::Gradient {
+            kind: vello_common::peniko::GradientKind::Sweep(
+                vello_common::peniko::SweepGradientPosition::new(c, start_angle, end_angle),
+            ),
+            stops: Self::vello_stops(stops),
+            extend: vello_common::peniko::Extend::Pad,
+            ..Default::default()
+        };
+        self.ctx.set_paint(gradient);
+        self.ctx
+            .fill_rect(&KRect::new(rect.x0, rect.y0, rect.x1, rect.y1));
+    }
+
     /// Fill an axis-aligned rounded rect (uniform corner radius
     /// clamped to half the shorter side) with a straight RGBA8 color.
     /// Same geometry as [`crate::Painter::fill_round_rect`].

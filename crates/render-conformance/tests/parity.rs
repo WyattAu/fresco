@@ -201,6 +201,73 @@ fn sparse_strip_matches_cpu_reference_within_tolerance() {
 }
 
 #[test]
+fn sweep_gradient_matches_cpu_reference() {
+    // Angular sweep from +X sweeping 2 rad clockwise (Y-down), pad
+    // beyond the span. The probe-verified vello semantics:
+    // t = ((atan2 - start) mod 2pi) / ((end - start) mod 2pi).
+    let big = path_kit::Rect::from_points(
+        path_kit::Vec2::new(0.0, 0.0),
+        path_kit::Vec2::new(96.0, 64.0),
+    );
+    let stops: &[(f32, [u8; 4])] = &[
+        (0.0, [0, 0, 255, 255]),
+        (0.25, [0, 255, 0, 255]),
+        (0.5, [255, 255, 0, 255]),
+        (1.0, [255, 0, 0, 255]),
+    ];
+
+    let mut cpu = Surface::new(WIDTH, HEIGHT).unwrap_or_default();
+    let mut painter = Painter::default();
+    let sweep = paint_kit::SweepGradient::new(
+        path_kit::Vec2::new(48.0, 32.0),
+        0.0,
+        2.0,
+        stops
+            .iter()
+            .map(|(o, c)| paint_kit::ColorStop {
+                offset: *o,
+                color: *c,
+            })
+            .collect(),
+    );
+    painter.fill_rect(&mut cpu, big, &paint_kit::Paint::from(sweep));
+
+    let Some(mut target) = paint_kit::StripTarget::new(96, 64) else {
+        return;
+    };
+    target.fill_sweep(big, (48.0, 32.0), 0.0, 2.0, stops);
+    let mut strip = Surface::new(WIDTH, HEIGHT).unwrap_or_default();
+    if paint_kit::strip_into_surface(&mut target, &mut strip).is_none() {
+        return;
+    }
+
+    let cfg = CompareConfig {
+        max_channel_delta: 1,
+        max_mismatch_frac: 0.0,
+    };
+    match compare(&as_ref(&cpu), &as_ref(&strip), cfg) {
+        Ok(report) => {
+            println!(
+                "sweep parity ok: mismatch_frac={:.5} max_delta={}",
+                report.mismatch_frac, report.max_delta
+            );
+            let dir = Path::new("/tmp/opencode");
+            let _ = write_bmp(&dir.join("parity-sweep-cpu.bmp"), &as_ref(&cpu));
+            let _ = write_bmp(&dir.join("parity-sweep-strip.bmp"), &as_ref(&strip));
+        }
+        Err(mismatch) => {
+            let dir = Path::new("/tmp/opencode");
+            let _ = write_bmp(&dir.join("parity-sweep-cpu.bmp"), &as_ref(&cpu));
+            let _ = write_bmp(&dir.join("parity-sweep-strip.bmp"), &as_ref(&strip));
+            panic!(
+                "sweep parity failed: mismatch_frac={:.5} max_delta={} first={:?}",
+                mismatch.report.mismatch_frac, mismatch.report.max_delta, mismatch.first
+            );
+        }
+    }
+}
+
+#[test]
 fn clipped_draws_match_cpu_reference() {
     // Clipped sequences: a solid clipped to a band, a device-space
     // gradient clipped to a window, and a nested clip (intersect).

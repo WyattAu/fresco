@@ -26,6 +26,14 @@ pub enum Paint {
     Linear(LinearGradient),
     /// Radial gradient centered at `center` with `radius` device pixels.
     Radial(RadialGradient),
+    /// Angular sweep around a center.
+    Sweep(SweepGradient),
+}
+
+impl From<SweepGradient> for Paint {
+    fn from(g: SweepGradient) -> Paint {
+        Paint::Sweep(g)
+    }
 }
 
 impl From<Solid> for Paint {
@@ -68,6 +76,41 @@ pub struct RadialGradient {
     /// Stops, any order; sorted on construction through
     /// [`RadialGradient::new`].
     pub stops: Vec<ColorStop>,
+}
+
+/// Angular sweep around `center` from `start_angle` to `end_angle`
+/// (radians from the positive X axis, clockwise in Y-down coordinates
+/// - the vello convention). Stops map to the swept span; angles past
+///   the span clamp to the nearest stop (pad).
+#[derive(Clone, Debug, PartialEq)]
+pub struct SweepGradient {
+    /// Center point.
+    pub center: Vec2,
+    /// Start angle in radians.
+    pub start_angle: f32,
+    /// End angle in radians.
+    pub end_angle: f32,
+    /// Stops, any order; sorted on construction through
+    /// [`SweepGradient::new`].
+    pub stops: Vec<ColorStop>,
+}
+
+impl SweepGradient {
+    /// New gradient with stops sorted by offset.
+    #[must_use]
+    pub fn new(center: Vec2, start_angle: f32, end_angle: f32, mut stops: Vec<ColorStop>) -> Self {
+        stops.sort_by(|a, b| {
+            a.offset
+                .partial_cmp(&b.offset)
+                .unwrap_or(core::cmp::Ordering::Equal)
+        });
+        SweepGradient {
+            center,
+            start_angle,
+            end_angle,
+            stops,
+        }
+    }
 }
 
 impl LinearGradient {
@@ -167,6 +210,22 @@ impl Paint {
                 let t = (dx * dx + dy * dy).sqrt() / g.radius;
                 eval_stops(&g.stops, t)
             }
+            Paint::Sweep(g) => {
+                // Angle from the center, normalized into the swept
+                // span [start, start + span) with wrap, then pad
+                // beyond the span.
+                let two_pi = core::f64::consts::TAU;
+                let start = f64::from(g.start_angle);
+                let span = (f64::from(g.end_angle) - start).rem_euclid(two_pi);
+                if span <= 0.0 {
+                    return g.stops.first().map(|s| s.color).unwrap_or([0, 0, 0, 0]);
+                }
+                let dx = x - g.center.x;
+                let dy = y - g.center.y;
+                let angle = dy.atan2(dx) - start;
+                let t = angle.rem_euclid(two_pi) / span;
+                eval_stops(&g.stops, t)
+            }
         }
     }
 }
@@ -249,6 +308,41 @@ mod tests {
             }],
         ));
         assert_eq!(paint_zero.eval(5.0, 5.0), [9, 9, 9, 255], "zero radius");
+    }
+
+    #[test]
+    fn sweep_normalizes_wraps_and_pads() {
+        // Span -1..1 rad: angle 0 lands at t = 0.5.
+        let g = Paint::Sweep(SweepGradient::new(
+            Vec2::new(0.0, 0.0),
+            -1.0,
+            1.0,
+            vec![
+                ColorStop {
+                    offset: 0.0,
+                    color: [0, 0, 255, 255],
+                },
+                ColorStop {
+                    offset: 1.0,
+                    color: [255, 0, 0, 255],
+                },
+            ],
+        ));
+        // Mid-span: halfway between blue and red (green stays 0).
+        let mid = g.eval(1.0, 0.0);
+        assert_eq!(mid, [128, 0, 128, 255], "mid-span interpolates: {mid:?}");
+        // Past the span end (pad): last stop wins.
+        let past = g.eval(-1.0, 1.2);
+        assert_eq!(past, [255, 0, 0, 255], "pad past the end: {past:?}");
+        // At the span end exactly: last stop.
+        let end = g.eval(1.0, 1.557);
+        assert_eq!(end, [255, 0, 0, 255], "span end: {end:?}");
+        // Negative angles wrap forward: -1.05 rad reads ~t 0.975.
+        let near = g.eval(-1.0, -1.05);
+        assert!(
+            near[0] > 200 && near[2] < 60,
+            "wrapped angle lands near the end stop: {near:?}"
+        );
     }
 
     #[test]

@@ -1,5 +1,21 @@
 # CHANGELOG
 
+## 0.4.10 (2026-11-07)
+
+Phase 4.3: sweep gradients on both backends - gradient-kind oracle
+coverage complete.
+
+- `paint-kit`: `SweepGradient` (center, start/end angles in radians
+  from +X, clockwise in Y-down - the vello convention) with device
+  space angle evaluation; `Paint::Sweep` +
+  `From<SweepGradient>`. `StripTarget::fill_sweep` mirrors it via
+  vello's `SweepGradientPosition`.
+- Parity: sweep joins the fixture suite with the strict one-step
+  oracle, zero budget (probe-verified convention match:
+  t = ((atan2 - start) mod 2pi) / ((end - start) mod 2pi), pad
+  beyond). `SweepGradient` unit test covers interpolation, span-end,
+  pad, and wrap semantics.
+
 ## 0.4.9 (2026-11-06)
 
 Phase 4.3 completion: shadows reach the widget chrome, with the

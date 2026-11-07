@@ -99,6 +99,9 @@ Phase 2 earns it.
   carry soft shadows; paint_tree_plan inflates damage regions by
   SHADOW_MARGIN (falsification-verified: 389 stale bytes without).
   Phase 4.3 SDF shadows closed end to end.
+- 2026-11-07: sweep gradients (0.4.10): SweepGradient on both
+  backends; gradient-kind oracle coverage complete (solid, linear,
+  radial, sweep). Strict parity holds at zero budget.
 
 ## 3. Phases
 

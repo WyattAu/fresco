@@ -7,6 +7,8 @@
 //! runs the full draw sequence under a pixel-aligned clip, and the
 //! region content is blitted over the previous frame.
 
+#![cfg(feature = "sparse-strip")]
+
 use paint_kit::{Rect, StripTarget, Vec2};
 use scene_kit::{DamageTracker, FramePlan};
 

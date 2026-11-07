@@ -25,7 +25,7 @@ pub mod strip;
 pub use strip::{StripTarget, strip_into_surface};
 pub mod surface;
 
-pub use paint::{ColorStop, LinearGradient, Paint, RadialGradient};
+pub use paint::{ColorStop, LinearGradient, Paint, RadialGradient, SweepGradient};
 pub use painter::{Image, Painter, Solid};
 pub use raster::{Edge, rasterize_polys};
 pub use surface::Surface;
