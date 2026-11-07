@@ -32,6 +32,7 @@ struct PacingSink {
     render_us: Vec<u128>,
     intervals_us: Vec<u128>,
     last_present: Option<Instant>,
+    inspector: window_kit::inspector::Inspector,
 }
 
 impl PacingSink {
@@ -98,6 +99,7 @@ impl PacingSink {
             render_us: Vec::new(),
             intervals_us: Vec::new(),
             last_present: None,
+            inspector: window_kit::inspector::Inspector::from_env(),
         }
     }
 
@@ -160,6 +162,11 @@ impl EventSink for PacingSink {
         match event {
             Event::RedrawRequested | Event::Resized(_) => {
                 if self.frame >= frame_count() {
+                    self.inspector.finish(
+                        std::env::var("GATE_A_VIDEO")
+                            .map(|v| v == "1")
+                            .unwrap_or(false),
+                    );
                     self.report();
                     std::process::exit(0);
                 }
@@ -175,6 +182,13 @@ impl EventSink for PacingSink {
                 }
                 self.last_present = Some(start);
                 let _ = ok;
+                self.inspector.record_frame(
+                    self.surface.data(),
+                    phys.width as usize,
+                    phys.height as usize,
+                    elapsed as u64,
+                    0,
+                );
                 self.frame += 1;
                 window.request_redraw();
             }

@@ -102,10 +102,16 @@ Phase 2 earns it.
 - 2026-11-07: sweep gradients (0.4.10): SweepGradient on both
   backends; gradient-kind oracle coverage complete (solid, linear,
   radial, sweep). Strict parity holds at zero budget.
-- 2026-11-07: pacing scaffolding (0.4.11, 4.4): per-frame paint-time
+- 2026-11-06: pacing scaffolding (0.4.11, 4.4): per-frame paint-time
   stats (mean/p50/p99/max) over 120 byte-identical frames of a
   360x640 settings screen; headless rasterization only - present-path
   pacing waits for kestrel. Screen verified on a phone.
+- 2026-11-07: fresco inspector (0.5.2, 4.4): attachable tracing +
+  frame capture + recording + analysis - pixel-diff per frame, BMP
+  recording, platform screen captures, trace.json manifest,
+  analysis.txt, optional ffmpeg video. Artifacts land mid-run for
+  review during operation. Closes the 4.4 instrumentation scope
+  headlessly; ETW markers and Windows CI bench stay Windows-bound.
 - 2026-11-07: widget-level strip rendering (0.4.12, 4.1 completion):
   StripListPainter renders the full widget tree on the sparse-strip
   pipeline; settings-tree parity through both backends - crisp

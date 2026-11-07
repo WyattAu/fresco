@@ -81,6 +81,26 @@ Phase 4.1 completion: widget-level rendering on the strip backend.
 - The damage-plan path can now drive the strip backend with the real
   widget renderer.
 
+## 0.5.2 (2026-11-07)
+
+Fresco inspector: tracing, frame capture, recording, and analysis.
+
+- `window-kit::inspector`: `Inspector` attaches to any render loop -
+  per-frame pixel-diff analysis (what changed vs the previous frame),
+  BMP frame recording at a configurable cadence, platform screen
+  captures via scrot/grim/import, a `trace.json` manifest (per-frame
+  cost, interval, changed pixels, hash), and an `analysis.txt`
+  report (paint percentiles, change ratios, identical-frame count,
+  change hotspot). Optional video encoding via ffmpeg. Artifacts land
+  on disk as frames complete, so review can happen mid-run.
+- Env-driven config: `GATE_A_RECORD`, `GATE_A_RECORD_EVERY`,
+  `GATE_A_SCREEN_EVERY`, `GATE_A_DIR`; explicit
+  `Inspector::with_dir` for non-env callers.
+- The gate_a_pacing example records when `GATE_A_RECORD=1` and
+  writes the full artifact set at exit.
+- Inspector unit tests: BMP header/content validity, per-pixel
+  changed counting, disabled-recording no-op.
+
 ## 0.4.11 (2026-11-07)
 
 Phase 4.4 scaffolding: pacing instrumentation.
