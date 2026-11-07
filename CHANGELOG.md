@@ -21,6 +21,18 @@ Gate A evidence, collected on a live display.
   Gate A verdict: winit pacing is sufficient for kestrel; the outlier
   tail (54 ms max, first frames) needs a longer soak.
 
+## 0.5.1 (2026-11-07)
+
+Gate A soak: the verdict is definitive.
+
+- `gate_a_pacing` gained a `GATE_A_FRAMES` env override; a 3000-frame
+  soak (release build, ~90 s continuous rendering on the live
+  display) measured paint p50 0.27 ms, mean 0.44 ms, p99 1.7 ms, one
+  86 ms compositor hiccup (0.03% of intervals), 100.0% of frames
+  within the 16.7 ms budget. Full paint uses ~1.6% of a 60 Hz frame.
+- Gate A verdict: definitively sufficient for kestrel. The earlier
+  2.6 ms means were a debug-profile binary; release is ~10x faster.
+
 ## 0.5.0 (2026-11-07)
 
 Gate C milestone: the backend swap is instrumented and measured.

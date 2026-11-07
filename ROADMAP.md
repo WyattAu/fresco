@@ -133,6 +133,11 @@ Phase 2 earns it.
   60 Hz frame. Gate A verdict: definitively sufficient.
 - 2026-11-07: docs-gate hygiene (0.5.1): doc-lint and spec-audit PASS
   at tier k (em-dashes, truth table, llms.txt regeneration).
+- 2026-11-07: Gate A soak (0.5.2): 3000 release frames - paint p50
+  0.27 ms, p99 1.7 ms, 100.0% within budget (one 86 ms compositor
+  hiccup, 0.03%). Gate A verdict definitive: winit pacing sufficient;
+  next lever is native strip text (vello glyph runs + system fonts),
+  then kestrel decides.
 
 ## 3. Phases
 
