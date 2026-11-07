@@ -2696,6 +2696,7 @@ dependencies = [
 name = "window-kit"
 version = "0.5.3"
 dependencies = [
+ "fx",
  "paint-kit",
  "softbuffer",
  "widget-kit",

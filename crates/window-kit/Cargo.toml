@@ -21,6 +21,7 @@ softbuffer = { version = "0.4", optional = true }
 [dev-dependencies]
 widget-kit = { workspace = true }
 paint-kit = { workspace = true }
+fx = { workspace = true }
 
 [lints.rust]
 missing_docs = "deny"
