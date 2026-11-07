@@ -211,10 +211,20 @@ impl ApplicationHandler for WinitApp<'_> {
                 Ok(c) => c,
                 Err(_) => continue,
             };
-            let surface = match softbuffer::Surface::new(&context, shared.clone()) {
-                Ok(s) => s,
-                Err(_) => continue,
+            let Ok(mut surface) = softbuffer::Surface::new(&context, shared.clone()) else {
+                continue;
             };
+            // softbuffer requires one resize before the first
+            // buffer_mut, even at the creation size.
+            let (Some(sw), Some(sh)) = (
+                core::num::NonZeroU32::new(inner.width),
+                core::num::NonZeroU32::new(inner.height),
+            ) else {
+                continue;
+            };
+            if surface.resize(sw, sh).is_err() {
+                continue;
+            }
             let id = WindowId(self.next_ordinal);
             self.next_ordinal += 1;
             self.entries.push(WinitWindowEntry {

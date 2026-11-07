@@ -119,6 +119,15 @@ Phase 2 earns it.
   dominated by micro-font-as-1x1-fills; native glyph runs are the
   next lever). The swap decision itself stays with kestrel benches.
   Phase 4 headless work complete.
+- 2026-11-07: GATE A FIRST EVIDENCE (0.5.1): gate_a_pacing example
+  ran the settings screen through a real winit window + softbuffer
+  present on the live display: 300 frames, paint+present p50 1.8 ms,
+  present-to-present mean 2.6 ms, 99.3% within the 16.7 ms budget.
+  Provisional verdict: winit pacing sufficient for kestrel; outlier
+  tail (54 ms max, first frames) needs a longer soak. Also fixed the
+  present-path bug the example caught on run one: softbuffer surfaces
+  now resize at creation (untested platform path - the fake backend
+  never exercises it).
 - 2026-11-07: docs-gate hygiene (0.5.1): doc-lint and spec-audit PASS
   at tier k (em-dashes, truth table, llms.txt regeneration).
 

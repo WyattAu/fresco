@@ -1,5 +1,26 @@
 # CHANGELOG
 
+## 0.5.1 (2026-11-07)
+
+Gate A evidence, collected on a live display.
+
+- Fix: the winit backend created each softbuffer surface without an
+  initial resize - softbuffer 0.4 requires one resize before the
+  first buffer_mut, and because the recorded size already matched
+  the window, the first present skipped it and panicked. Found by
+  the new Gate A pacing example on its first real-window run (the
+  fake-backend tests never exercise the platform surface).
+- New example `gate_a_pacing` (window-kit): opens a real window,
+  renders the phone settings screen every frame through the CPU
+  reference, presents via softbuffer, measures present-to-present
+  intervals and paint+present cost over 300 frames, prints stats,
+  exits.
+- Measured (X11/Wayland session, 360x640): paint+present mean
+  2.6 ms, p50 1.8 ms, p99 10.7 ms; present-to-present mean 2.6 ms;
+  297/299 frames (99.3%) within the 16.7 ms 60 Hz budget. Provisional
+  Gate A verdict: winit pacing is sufficient for kestrel; the outlier
+  tail (54 ms max, first frames) needs a longer soak.
+
 ## 0.5.0 (2026-11-07)
 
 Gate C milestone: the backend swap is instrumented and measured.
