@@ -112,6 +112,13 @@ Phase 2 earns it.
   geometry byte-exact, shadow bands under the documented 2% budget.
   The damage plan can drive the strip backend with the real widget
   renderer.
+- 2026-11-07: Gate C instrument complete (0.5.0): paint_tree_plan_with
+  drives any renderer through the damage plan; first backend
+  measurement collected (settings tree, 60 frames: CPU mean 5.7 ms /
+  p99 8.1 ms; strip mean 60.5 ms / p99 103.8 ms - strip cost
+  dominated by micro-font-as-1x1-fills; native glyph runs are the
+  next lever). The swap decision itself stays with kestrel benches.
+  Phase 4 headless work complete.
 
 ## 3. Phases
 
@@ -206,7 +213,11 @@ Each with the measured reason (docs/competitive-analysis.md):
   877), measured on kestrel screens. Default: taffy.
 - **Gate C (Phase 4):** Vello full compute vs the hybrid CPU sparse-strip
   path as primary, depending on upstream release cadence. The parity gate
-  makes this swappable by construction.
+  makes this swappable by construction. Status 2026-11-07: instrument
+  complete and first measurement collected (0.5.0 - strip 60.5 ms vs CPU
+  5.7 ms mean on the settings tree, strip cost dominated by
+  micro-font-as-1x1-fills); the decision itself waits for kestrel benches
+  and native strip text.
 - **Gate D (before widget-kit):** widget API shape: retained property
   structs vs reactive signal graph (874). Prototype both against kestrel
   settings; the signal graph is the front-runner on paper, the spike

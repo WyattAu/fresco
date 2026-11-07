@@ -489,6 +489,50 @@ impl WidgetRenderer for DrawListPainter<'_> {
 /// shadow bytes remain.
 pub const SHADOW_MARGIN: f64 = 10.0;
 
+/// Paint the tree constrained to a scene-kit damage plan through any
+/// renderer. Region clips are inflated by [`SHADOW_MARGIN`] and
+/// pixel-aligned; `take_plan` emits non-overlapping regions, so every
+/// pixel is drawn exactly once and the result is byte-identical to a
+/// full re-render (proven for both backends by `tests/damage.rs` and
+/// `tests/widget_parity.rs`).
+pub fn paint_tree_plan_with(
+    tree: &WidgetTree,
+    renderer: &mut dyn WidgetRenderer,
+    colors: &WidgetColors,
+    plan: &FramePlan,
+) {
+    match plan {
+        FramePlan::None => {}
+        FramePlan::Full => paint_tree_with(tree, renderer, colors),
+        FramePlan::Regions(regions) => {
+            for region in regions {
+                // Inflate by the shadow margin first: shadowed widgets
+                // (buttons, select headers) paint up to SHADOW_MARGIN
+                // beyond their rect, and a sub-widget-rect region would
+                // leave stale shadow bytes. Then pixel-align the clip:
+                // a widget rect edge at a fractional pixel still blends
+                // into that pixel on a full render, so the damage clip
+                // must include it (floor the leading edges, ceil the
+                // trailing ones).
+                let clip = Rect {
+                    x0: (region.x0 - SHADOW_MARGIN).floor(),
+                    y0: (region.y0 - SHADOW_MARGIN).floor(),
+                    x1: (region.x1 + SHADOW_MARGIN).ceil(),
+                    y1: (region.y1 + SHADOW_MARGIN).ceil(),
+                };
+                renderer.push_clip(Rect2D {
+                    x: clip.x0,
+                    y: clip.y0,
+                    width: clip.x1 - clip.x0,
+                    height: clip.y1 - clip.y0,
+                });
+                paint_tree_with(tree, renderer, colors);
+                renderer.pop_clip();
+            }
+        }
+    }
+}
+
 /// Paint the tree constrained to a scene-kit damage plan.
 ///
 /// [`FramePlan::Full`] behaves like [`paint_tree`]; [`FramePlan::None`]

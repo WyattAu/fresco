@@ -1,5 +1,21 @@
 # CHANGELOG
 
+## 0.5.0 (2026-11-07)
+
+Gate C milestone: the backend swap is instrumented and measured.
+
+- `paint_tree_plan_with`: the damage-plan path drives any renderer,
+  so the strip backend serves damaged frames with the real widget
+  renderer (proof test: region repaints over the previous frame are
+  byte-identical to full strip renders).
+- Gate C measurement test: the 360x640 settings tree painted 60
+  frames per backend. CPU reference: mean 5.7 ms, p99 8.1 ms.
+  Sparse-strip: mean 60.5 ms, p99 103.8 ms - the strip path's cost
+  is dominated by the micro-font rendered as hundreds of 1x1 rect
+  fills; native glyph runs (vello text) are the obvious next lever
+  before any swap decision. Numbers reported, never asserted.
+- Workspace versions synced at 0.5.0.
+
 ## 0.4.12 (2026-11-07)
 
 Phase 4.1 completion: widget-level rendering on the strip backend.

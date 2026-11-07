@@ -38,7 +38,8 @@ pub use a11y::emit_a11y_tree;
 #[cfg(feature = "accesskit")]
 pub use accesskit_bridge::emit_accesskit_update;
 pub use render::{
-    DrawListPainter, WidgetColors, WidgetRenderer, paint_tree, paint_tree_plan, paint_tree_with,
+    DrawListPainter, SHADOW_MARGIN, WidgetColors, WidgetRenderer, paint_tree, paint_tree_plan,
+    paint_tree_plan_with, paint_tree_with,
 };
 #[cfg(feature = "strip-renderer")]
 pub mod strip_renderer;
