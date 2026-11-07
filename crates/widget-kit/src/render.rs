@@ -532,17 +532,14 @@ pub fn paint_tree_plan(
 }
 
 /// Paint the whole tree: root panel fill, then every widget.
-pub fn paint_tree(
+/// Paint the whole tree through any renderer (the strip backend
+/// drives its own [`crate::strip_renderer::StripListPainter`] through
+/// this).
+pub fn paint_tree_with(
     tree: &WidgetTree,
-    surface: &mut Surface,
-    painter: &mut Painter,
+    renderer: &mut dyn WidgetRenderer,
     colors: &WidgetColors,
 ) {
-    let mut renderer = DrawListPainter {
-        surface,
-        painter,
-        colors: *colors,
-    };
     let Some(root) = tree.root() else {
         return;
     };
@@ -556,11 +553,26 @@ pub fn paint_tree(
     match root_scroll {
         Some(scroll_y) => {
             renderer.push_clip(tree.widget(root).map(|w| w.rect).unwrap_or_default());
-            paint_children(tree, Some(root), (0.0, -scroll_y), &mut renderer, colors);
+            paint_children(tree, Some(root), (0.0, -scroll_y), &mut *renderer, colors);
             renderer.pop_clip();
         }
-        None => paint_children(tree, Some(root), (0.0, 0.0), &mut renderer, colors),
+        None => paint_children(tree, Some(root), (0.0, 0.0), &mut *renderer, colors),
     }
+}
+
+/// Paint the whole tree: root panel, then widgets back-to-front.
+pub fn paint_tree(
+    tree: &WidgetTree,
+    surface: &mut Surface,
+    painter: &mut Painter,
+    colors: &WidgetColors,
+) {
+    let mut renderer = DrawListPainter {
+        surface,
+        painter,
+        colors: *colors,
+    };
+    paint_tree_with(tree, &mut renderer, colors);
 }
 
 fn paint_children(

@@ -106,6 +106,12 @@ Phase 2 earns it.
   stats (mean/p50/p99/max) over 120 byte-identical frames of a
   360x640 settings screen; headless rasterization only - present-path
   pacing waits for kestrel. Screen verified on a phone.
+- 2026-11-07: widget-level strip rendering (0.4.12, 4.1 completion):
+  StripListPainter renders the full widget tree on the sparse-strip
+  pipeline; settings-tree parity through both backends - crisp
+  geometry byte-exact, shadow bands under the documented 2% budget.
+  The damage plan can drive the strip backend with the real widget
+  renderer.
 
 ## 3. Phases
 

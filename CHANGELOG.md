@@ -1,5 +1,23 @@
 # CHANGELOG
 
+## 0.4.12 (2026-11-07)
+
+Phase 4.1 completion: widget-level rendering on the strip backend.
+
+- `widget-kit` (feature `strip-renderer`): `StripListPainter`, a
+  `WidgetRenderer` over `StripTarget` mirroring every CPU chrome
+  method's geometry (labels as 1x1 micro-font rect fills, buttons and
+  select headers with native strip shadows and ring-inside focus,
+  checkbox, text field, tabs, tree rows, clips).
+- `paint_tree_with`: drive the tree through any `WidgetRenderer`.
+- Widget-level parity test: the 360x640 settings tree through both
+  backends - all crisp geometry holds the one-step oracle; the only
+  divergences (2478 px = 1.07%, budget 2%) are the shadow falloff
+  bands around the button, the documented CPU-SDF-vs-vello-gaussian
+  exception. Tree rows and labels byte-exact.
+- The damage-plan path can now drive the strip backend with the real
+  widget renderer.
+
 ## 0.4.11 (2026-11-07)
 
 Phase 4.4 scaffolding: pacing instrumentation.

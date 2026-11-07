@@ -37,7 +37,13 @@ pub mod theme;
 pub use a11y::emit_a11y_tree;
 #[cfg(feature = "accesskit")]
 pub use accesskit_bridge::emit_accesskit_update;
-pub use render::{DrawListPainter, WidgetColors, WidgetRenderer, paint_tree, paint_tree_plan};
+pub use render::{
+    DrawListPainter, WidgetColors, WidgetRenderer, paint_tree, paint_tree_plan, paint_tree_with,
+};
+#[cfg(feature = "strip-renderer")]
+pub mod strip_renderer;
+#[cfg(feature = "strip-renderer")]
+pub use strip_renderer::StripListPainter;
 
 use layout_kit::engine::NodeStyle;
 
