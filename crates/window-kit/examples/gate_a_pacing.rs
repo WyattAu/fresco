@@ -16,6 +16,13 @@ use window_kit::winit_backend::WinitRunner;
 
 const FRAMES: usize = 300;
 
+fn frame_count() -> usize {
+    std::env::var("GATE_A_FRAMES")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(FRAMES)
+}
+
 struct PacingSink {
     tree: WidgetTree,
     surface: paint_kit::Surface,
@@ -152,7 +159,7 @@ impl EventSink for PacingSink {
     fn event(&mut self, window: &mut dyn Window, present: &mut dyn Present, event: &Event) {
         match event {
             Event::RedrawRequested | Event::Resized(_) => {
-                if self.frame >= FRAMES {
+                if self.frame >= frame_count() {
                     self.report();
                     std::process::exit(0);
                 }

@@ -127,7 +127,10 @@ Phase 2 earns it.
   tail (54 ms max, first frames) needs a longer soak. Also fixed the
   present-path bug the example caught on run one: softbuffer surfaces
   now resize at creation (untested platform path - the fake backend
-  never exercises it).
+  never exercises it). SOAK (release build, 3000 frames, 90 s):
+  paint p50 0.27 ms, mean 0.44 ms, p99 1.7 ms, one 86 ms compositor
+  hiccup (0.03%); 100.0% within budget - full paint uses ~1.6% of a
+  60 Hz frame. Gate A verdict: definitively sufficient.
 - 2026-11-07: docs-gate hygiene (0.5.1): doc-lint and spec-audit PASS
   at tier k (em-dashes, truth table, llms.txt regeneration).
 
