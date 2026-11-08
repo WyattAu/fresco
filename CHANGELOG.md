@@ -81,6 +81,21 @@ Phase 4.1 completion: widget-level rendering on the strip backend.
 - The damage-plan path can now drive the strip backend with the real
   widget renderer.
 
+## 0.5.4 (2026-11-07)
+
+Charts expansion: 12 of 22 plychart types ported, all visually
+verified through the exact-coverage rasterizer.
+
+- New charts: AreaChart, Multiline, Histogram, StackedBar,
+  Candlestick (OHLC body + wick), Heatmap (two-stop ramp),
+  Correlation (diverging red/green), Treemap (slice-and-dice),
+  Waterfall (floating bars + connectors), Gauge (polar arc segments +
+  needle - first polar rendering, no rotation transforms needed),
+  Pie (triangle-fan wedges), Radar (polygon web + data polygon).
+- Chart catalog page v2 (5x4 grid of 21 charts), deterministic,
+  FNV-golden; visually inspected - no stack defects found, minor
+  cosmetic only (8-segment wedge approximation).
+
 ## 0.5.3 (2026-11-07)
 
 New crate `fx`: the solid-fx + plychart capability catalog lands in

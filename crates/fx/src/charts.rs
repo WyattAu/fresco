@@ -781,3 +781,484 @@ pub fn strip(p0: Vec2, p1: Vec2, half: f64) -> Vec<Vec2> {
         Vec2::new(p0.x - nx * half, p0.y - ny * half),
     ]
 }
+
+/// Polar direction unit vector at `angle` (radians, clockwise in
+/// Y-down coordinates - the vello convention).
+fn polar_dir(angle: f64) -> Vec2 {
+    Vec2::new(angle.cos(), angle.sin())
+}
+
+/// Filled quad between two radii across a small angular slice.
+fn arc_segment(fx: &mut Fx, center: Vec2, r_in: f64, r_out: f64, a0: f64, a1: f64, color: [u8; 4]) {
+    let p = |r: f64, a: f64| Vec2::new(center.x + r * a.cos(), center.y + r * a.sin());
+    let quad = [p(r_in, a0), p(r_out, a0), p(r_out, a1), p(r_in, a1)];
+    fill_poly(fx, &quad, color);
+}
+
+/// Gauge: background arc, value arc, and needle, built from polar
+/// segments (no rotation transforms - quad points are computed
+/// directly in device space).
+pub struct Gauge {
+    /// Value in `[0, 1]`.
+    pub value: f64,
+    /// Sweep from `start_angle` to `end_angle` (radians).
+    /// Sweep start angle in radians.
+    pub start_angle: f64,
+    /// Sweep end angle in radians.
+    pub end_angle: f64,
+    /// Track color (background arc).
+    pub track: [u8; 4],
+    /// Value arc color.
+    pub color: [u8; 4],
+    /// Needle color.
+    pub needle: [u8; 4],
+    /// Segment count for the arc approximation.
+    pub segments: usize,
+}
+
+impl Gauge {
+    /// Defaults: 270-degree sweep, 24 segments.
+    #[must_use]
+    pub fn new(value: f64) -> Self {
+        Gauge {
+            value: value.clamp(0.0, 1.0),
+            start_angle: std::f64::consts::FRAC_PI_4,
+            end_angle: std::f64::consts::TAU - std::f64::consts::FRAC_PI_4,
+            track: [60, 64, 76, 255],
+            color: [80, 200, 140, 255],
+            needle: [240, 244, 250, 255],
+            segments: 24,
+        }
+    }
+
+    /// Draw into `rect` with the arc centered in the cell.
+    pub fn draw(&self, fx: &mut Fx, rect: Rect, _t: f64) {
+        let cx = (rect.x0 + rect.x1) * 0.5;
+        let cy = (rect.y0 + rect.y1) * 0.5;
+        let r = (rect.width().min(rect.height()) * 0.5) - 6.0;
+        let thickness = 10.0;
+        let sweep = self.end_angle - self.start_angle;
+        let segs = self.segments.max(4);
+        let seg_width = sweep / segs as f64;
+        // Background track.
+        for i in 0..segs {
+            let a = self.start_angle + (i as f64 + 0.5) * seg_width;
+            arc_segment(
+                fx,
+                Vec2::new(cx, cy),
+                r - thickness * 0.5,
+                r + thickness * 0.5,
+                a - seg_width * 0.5,
+                a + seg_width * 0.5,
+                self.track,
+            );
+        }
+        // Value arc up to fraction.
+        let vsegs = ((segs as f64 * self.value).round() as usize).min(segs);
+        for i in 0..vsegs {
+            let a = self.start_angle + (i as f64 + 0.5) * seg_width;
+            arc_segment(
+                fx,
+                Vec2::new(cx, cy),
+                r - thickness * 0.5,
+                r + thickness * 0.5,
+                a - seg_width * 0.5,
+                a + seg_width * 0.5,
+                self.color,
+            );
+        }
+        // Needle from center to the value angle.
+        let vangle = self.start_angle + sweep * self.value;
+        let dir = polar_dir(vangle);
+        let tip = Vec2::new(
+            cx + dir.x * (r + thickness * 0.5),
+            cy + dir.y * (r + thickness * 0.5),
+        );
+        fill_poly(fx, &strip(Vec2::new(cx, cy), tip, 1.5), self.needle);
+        // Hub.
+        fill_rect(fx, cx - 3.0, cy - 3.0, 6.0, 6.0, self.needle);
+    }
+}
+
+/// Pie: filled wedges from the center, one per value.
+pub struct Pie {
+    /// Values (wedge angular fraction = value / total).
+    pub values: Vec<f64>,
+    /// Wedge colors, cycled.
+    pub colors: Vec<[u8; 4]>,
+    /// Start angle in radians.
+    pub start_angle: f64,
+}
+
+impl Pie {
+    /// Defaults: four colors, sweep starts at +X.
+    #[must_use]
+    pub fn new(values: Vec<f64>) -> Self {
+        Pie {
+            values,
+            colors: vec![
+                [80, 130, 210, 255],
+                [230, 170, 80, 255],
+                [90, 200, 130, 255],
+                [200, 90, 150, 255],
+            ],
+            start_angle: 0.0,
+        }
+    }
+
+    /// Draw into `rect`.
+    pub fn draw(&self, fx: &mut Fx, rect: Rect, _t: f64) {
+        if self.values.is_empty() {
+            return;
+        }
+        let total: f64 = self.values.iter().sum();
+        if total <= 0.0 {
+            return;
+        }
+        let cx = (rect.x0 + rect.x1) * 0.5;
+        let cy = (rect.y0 + rect.y1) * 0.5;
+        let r = rect.width().min(rect.height()) * 0.45;
+        let segs_per_wedge = 8;
+        let mut a = self.start_angle;
+        for (i, &v) in self.values.iter().enumerate() {
+            let frac = v / total;
+            let sweep = frac * std::f64::consts::TAU;
+            let color = self
+                .colors
+                .get(i % self.colors.len())
+                .copied()
+                .unwrap_or([150, 150, 160, 255]);
+            // Wedge polygon: center + arc points across the sweep.
+            let mut wedge = vec![Vec2::new(cx, cy)];
+            for s in 0..=segs_per_wedge {
+                let ang = a + (s as f64 / segs_per_wedge as f64) * sweep;
+                wedge.push(Vec2::new(cx + r * ang.cos(), cy + r * ang.sin()));
+            }
+            fill_poly(fx, &wedge, color);
+            a += sweep;
+        }
+    }
+}
+
+/// Radar: polygon web, spokes, and a data polygon.
+pub struct Radar {
+    /// Values in `[0, 1]` per axis.
+    pub values: Vec<f64>,
+    /// Web/spoke color.
+    pub web: [u8; 4],
+    /// Data polygon color (filled).
+    pub color: [u8; 4],
+}
+
+impl Radar {
+    /// Defaults: gray web, translucent teal polygon.
+    #[must_use]
+    pub fn new(values: Vec<f64>) -> Self {
+        Radar {
+            values,
+            web: [110, 116, 130, 200],
+            color: [80, 200, 170, 110],
+        }
+    }
+
+    /// Draw into `rect`.
+    pub fn draw(&self, fx: &mut Fx, rect: Rect, _t: f64) {
+        let k = self.values.len();
+        if k < 3 {
+            return;
+        }
+        let cx = (rect.x0 + rect.x1) * 0.5;
+        let cy = (rect.y0 + rect.y1) * 0.5;
+        let r = rect.width().min(rect.height()) * 0.4;
+        let angle = |i: usize| -> f64 {
+            -std::f64::consts::FRAC_PI_2 + (i as f64 / k as f64) * std::f64::consts::TAU
+        };
+        let vertex = |i: usize, frac: f64| -> Vec2 {
+            let a = angle(i);
+            Vec2::new(cx + r * frac * a.cos(), cy + r * frac * a.sin())
+        };
+        // Web rings.
+        for frac in [0.25, 0.5, 0.75, 1.0] {
+            let mut ring: Vec<Vec2> = (0..k).map(|i| vertex(i, frac)).collect();
+            ring.push(ring[0]);
+            fill_poly(fx, &ring, [self.web[0], self.web[1], self.web[2], 40]);
+            // Ring outline via strip edges.
+            for i in 0..k {
+                let a = vertex(i, frac);
+                let b = vertex((i + 1) % k, frac);
+                fill_poly(fx, &strip(a, b, 0.5), self.web);
+            }
+        }
+        // Spokes.
+        for i in 0..k {
+            fill_poly(fx, &strip(Vec2::new(cx, cy), vertex(i, 1.0), 0.5), self.web);
+        }
+        // Data polygon.
+        let mut data: Vec<Vec2> = (0..k)
+            .map(|i| {
+                let v = self.values.get(i).copied().unwrap_or(0.0).clamp(0.0, 1.0);
+                vertex(i, v)
+            })
+            .collect();
+        data.push(data[0]);
+        fill_poly(fx, &data, self.color);
+    }
+}
+
+/// Scatter: point cloud with per-point markers.
+pub struct Scatter {
+    /// (x, y) pairs normalized to `[0, 1]`.
+    pub points: Vec<(f64, f64)>,
+    /// Point color, straight RGBA.
+    pub color: [u8; 4],
+    /// Marker size in px.
+    pub size: f64,
+}
+
+impl Scatter {
+    /// Defaults: 60 points, 3 px markers.
+    #[must_use]
+    pub fn new(points: Vec<(f64, f64)>) -> Self {
+        Scatter {
+            points,
+            color: [230, 130, 80, 255],
+            size: 3.0,
+        }
+    }
+
+    /// Draw into `rect`.
+    pub fn draw(&self, fx: &mut Fx, rect: Rect, _t: f64) {
+        for &(nx, ny) in &self.points {
+            let x = rect.x0 + nx.clamp(0.0, 1.0) * rect.width();
+            let y = rect.y0 + (1.0 - ny.clamp(0.0, 1.0)) * rect.height();
+            fill_rect(
+                fx,
+                x - self.size * 0.5,
+                y - self.size * 0.5,
+                self.size,
+                self.size,
+                self.color,
+            );
+        }
+    }
+}
+
+/// Order book: horizontal depth bars around a mid price - bids below
+/// (green), asks above (red).
+pub struct OrderBook {
+    /// Bid sizes, best first.
+    pub bids: Vec<f64>,
+    /// Ask sizes, best first.
+    pub asks: Vec<f64>,
+    /// Bid color.
+    pub bid: [u8; 4],
+    /// Ask color.
+    pub ask: [u8; 4],
+}
+
+impl OrderBook {
+    /// Defaults.
+    #[must_use]
+    pub fn new(bids: Vec<f64>, asks: Vec<f64>) -> Self {
+        OrderBook {
+            bids,
+            asks,
+            bid: [60, 190, 120, 255],
+            ask: [210, 80, 90, 255],
+        }
+    }
+
+    /// Draw into `rect`.
+    pub fn draw(&self, fx: &mut Fx, rect: Rect, _t: f64) {
+        let max = self
+            .bids
+            .iter()
+            .chain(self.asks.iter())
+            .cloned()
+            .fold(f64::NEG_INFINITY, f64::max)
+            .max(f64::EPSILON);
+        let rows = self.bids.len() + self.asks.len();
+        if rows == 0 {
+            return;
+        }
+        let row_h = rect.height() / rows as f64;
+        let mut y = rect.y0;
+        // Asks on top (reverse so best ask is nearest mid).
+        for size in self.asks.iter().rev() {
+            let w = (size / max) * rect.width();
+            fill_rect(fx, rect.x0, y, w, row_h - 1.0, self.ask);
+            y += row_h;
+        }
+        // Mid line.
+        fill_rect(fx, rect.x0, y, rect.width(), 1.0, [120, 124, 136, 255]);
+        y += 1.0;
+        // Bids below.
+        for size in self.bids.iter() {
+            let w = (size / max) * rect.width();
+            fill_rect(fx, rect.x0, y, w, row_h - 1.0, self.bid);
+            y += row_h;
+        }
+    }
+}
+
+/// Volume: bars along the bottom portion of the chart.
+pub struct Volume {
+    /// Per-candle volume.
+    pub volumes: Vec<f64>,
+    /// Bar color, straight RGBA.
+    pub color: [u8; 4],
+}
+
+impl Volume {
+    /// Defaults: dim steel bars.
+    #[must_use]
+    pub fn new(volumes: Vec<f64>) -> Self {
+        Volume {
+            volumes,
+            color: [90, 130, 180, 180],
+        }
+    }
+
+    /// Draw into the bottom `fraction` of `rect`.
+    pub fn draw(&self, fx: &mut Fx, rect: Rect, fraction: f64) {
+        if self.volumes.is_empty() {
+            return;
+        }
+        let max = self
+            .volumes
+            .iter()
+            .cloned()
+            .fold(f64::NEG_INFINITY, f64::max)
+            .max(f64::EPSILON);
+        let zone_h = rect.height() * fraction.clamp(0.05, 1.0);
+        let n = self.volumes.len();
+        let slot = rect.width() / n as f64;
+        let bar_w = slot * 0.7;
+        for (i, &v) in self.volumes.iter().enumerate() {
+            let bh = (v / max) * zone_h;
+            let x = rect.x0 + i as f64 * slot + (slot - bar_w) * 0.5;
+            fill_rect(fx, x, rect.y1 - bh, bar_w, bh, self.color);
+        }
+    }
+}
+
+/// Backtest: price line + trade markers (triangles) at indices.
+pub struct Backtest {
+    /// Price series.
+    pub prices: Vec<f64>,
+    /// Trade (index, buy?) pairs.
+    pub trades: Vec<(usize, bool)>,
+}
+
+impl Backtest {
+    /// New.
+    #[must_use]
+    pub fn new(prices: Vec<f64>, trades: Vec<(usize, bool)>) -> Self {
+        Backtest { prices, trades }
+    }
+
+    /// Draw into `rect`: line plus up/down triangles at trade points.
+    pub fn draw(&self, fx: &mut Fx, rect: Rect, _t: f64) {
+        if self.prices.len() < 2 {
+            return;
+        }
+        let (min, max) = min_max(&self.prices);
+        let n = self.prices.len();
+        let point = |i: usize| -> Vec2 {
+            Vec2::new(
+                rect.x0 + (i as f64 / (n - 1) as f64) * rect.width(),
+                rect.y0 + (1.0 - normalize(self.prices[i], min, max)) * rect.height(),
+            )
+        };
+        for i in 0..n - 1 {
+            fill_poly(
+                fx,
+                &strip(point(i), point(i + 1), 1.0),
+                [160, 165, 180, 255],
+            );
+        }
+        for &(idx, buy) in &self.trades {
+            if idx >= n {
+                continue;
+            }
+            let p = point(idx);
+            let size = 6.0;
+            let dir = if buy { -1.0 } else { 1.0 };
+            let base_y = p.y + dir * size;
+            let tri = vec![
+                Vec2::new(p.x, p.y + dir * 2.0),
+                Vec2::new(p.x - size * 0.6, base_y),
+                Vec2::new(p.x + size * 0.6, base_y),
+            ];
+            let color = if buy {
+                [70, 200, 130, 255]
+            } else {
+                [220, 90, 90, 255]
+            };
+            fill_poly(fx, &tri, color);
+        }
+    }
+}
+
+/// Chart grid: regular grid lines for a chart area.
+pub struct ChartGrid {
+    /// Vertical line count.
+    pub vertical: usize,
+    /// Horizontal line count.
+    pub horizontal: usize,
+    /// Grid color, straight RGBA.
+    pub color: [u8; 4],
+}
+
+impl ChartGrid {
+    /// Defaults: 4 vertical, 4 horizontal.
+    #[must_use]
+    pub fn new() -> Self {
+        ChartGrid {
+            vertical: 4,
+            horizontal: 4,
+            color: [60, 64, 76, 200],
+        }
+    }
+
+    /// Draw into `rect`.
+    pub fn draw(&self, fx: &mut Fx, rect: Rect, _t: f64) {
+        let w = rect.width();
+        let h = rect.height();
+        for i in 1..self.vertical.max(1) {
+            let x = rect.x0 + (i as f64 / self.vertical as f64) * w;
+            fill_rect(fx, x, rect.y0, 1.0, h, self.color);
+        }
+        for i in 1..self.horizontal.max(1) {
+            let y = rect.y0 + (i as f64 / self.horizontal as f64) * h;
+            fill_rect(fx, rect.x0, y, w, 1.0, self.color);
+        }
+    }
+}
+
+/// Crosshair: vertical + horizontal hairlines through a data point.
+pub struct Crosshair {
+    /// Normalized cross point in `[0, 1]`.
+    pub at: (f64, f64),
+    /// Line color, straight RGBA.
+    pub color: [u8; 4],
+}
+
+impl Crosshair {
+    /// Defaults: dim white crosshair.
+    #[must_use]
+    pub fn new(at: (f64, f64)) -> Self {
+        Crosshair {
+            at,
+            color: [200, 204, 214, 180],
+        }
+    }
+
+    /// Draw over `rect`.
+    pub fn draw(&self, fx: &mut Fx, rect: Rect, _t: f64) {
+        let x = rect.x0 + self.at.0.clamp(0.0, 1.0) * rect.width();
+        let y = rect.y0 + (1.0 - self.at.1.clamp(0.0, 1.0)) * rect.height();
+        fill_rect(fx, x - 0.5, rect.y0, 1.0, rect.height(), self.color);
+        fill_rect(fx, rect.x0, y - 0.5, rect.width(), 1.0, self.color);
+    }
+}

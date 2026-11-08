@@ -40,8 +40,9 @@ pub mod text;
 
 pub use backgrounds::{DotPattern, FlickeringGrid, GridPattern, StarField};
 pub use charts::{
-    AreaChart, BarChart, Candlestick, Correlation, Heatmap, Histogram, LineChart, Multiline,
-    Sparkline, StackedBar, Treemap, Waterfall,
+    AreaChart, Backtest, BarChart, Candlestick, ChartGrid, Correlation, Crosshair, Gauge, Heatmap,
+    Histogram, LineChart, Multiline, OrderBook, Pie, Radar, Scatter, Sparkline, StackedBar,
+    Treemap, Volume, Waterfall,
 };
 pub use text::{CountUp, ScrambledText, ShimmerText};
 
