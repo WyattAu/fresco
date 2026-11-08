@@ -1,0 +1,28 @@
+[package]
+name = "fresco-charts"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "The plychart chart catalog for the fresco UI engine: 21 chart types on the exact-coverage rasterizer"
+keywords = ["charts", "widgets", "graphics"]
+categories = ["graphics", "visualization"]
+
+[dependencies]
+paint-kit = { workspace = true }
+path-kit = { workspace = true }
+plycore = { git = "https://github.com/WyattAu/plychart", package = "plycore" }
+
+[dev-dependencies]
+render-conformance = { path = "../render-conformance" }
+
+[lints.rust]
+missing_docs = "deny"
+unsafe_code = "forbid"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"

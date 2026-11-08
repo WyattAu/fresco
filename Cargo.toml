@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "crates/fx",
+    "crates/charts",
     "crates/path-kit",
     "crates/anim-kit",
     "crates/scene-kit",

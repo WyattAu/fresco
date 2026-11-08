@@ -1,11 +1,40 @@
-//! Charts (plychart family): data-driven plots rendered onto the
-//! exact-coverage rasterizer. Geometry conventions ported from
-//! plychart: linear value normalization to `[min, max]`, padding, and
-//! area fills.
+//! fresco-charts: the plychart chart catalog for the fresco UI engine.
+//!
+//! Ports all 21 plychart chart types onto paint-kit's exact-coverage
+//! rasterizer. Geometry conventions follow plychart (linear value
+//! normalization, pad, area fills); data types come from `plycore`
+//! (git dep on WyattAu/plychart) so chart data shapes stay compatible
+//! across the estate's WASM and native charting.
+//!
+//! Competitor API study baked into the design: series-based draws
+//! (TradingView lightweight-charts style), rect-scoped (Plotters
+//! root/area model), deterministic (Chart.js config reproducibility).
+#![forbid(unsafe_code)]
 
-use crate::Fx;
-use paint_kit::{Paint, Rect, Solid, Vec2};
+use paint_kit::{Paint, Painter, Rect, Solid, Surface, Vec2};
 use path_kit::Path;
+
+/// Draw context for chart rendering: surface, painter, animation clock.
+pub struct ChartFx<'a> {
+    /// Target surface.
+    pub surface: &'a mut Surface,
+    /// Painter scratch.
+    pub painter: &'a mut Painter,
+    /// Animation clock in seconds.
+    pub t: f64,
+}
+
+impl<'a> ChartFx<'a> {
+    /// New draw context.
+    #[must_use]
+    pub fn new(surface: &'a mut Surface, painter: &'a mut Painter, t: f64) -> Self {
+        ChartFx {
+            surface,
+            painter,
+            t,
+        }
+    }
+}
 
 /// Map a value into normalized `[0, 1]` against `[min, max]` with a
 /// small pad, ported from plychart's sparkline.
@@ -22,7 +51,7 @@ fn min_max(values: &[f64]) -> (f64, f64) {
 
 /// Draw a filled polygon (one subpath, auto-closed) as premultiplied
 /// solid color.
-fn fill_poly(fx: &mut Fx, points: &[Vec2], color: [u8; 4]) {
+fn fill_poly(fx: &mut ChartFx, points: &[Vec2], color: [u8; 4]) {
     if points.len() < 3 {
         return;
     }
@@ -45,7 +74,7 @@ fn fill_poly(fx: &mut Fx, points: &[Vec2], color: [u8; 4]) {
 }
 
 /// Fill one axis-aligned rectangle.
-fn fill_rect(fx: &mut Fx, x: f64, y: f64, w: f64, h: f64, color: [u8; 4]) {
+fn fill_rect(fx: &mut ChartFx, x: f64, y: f64, w: f64, h: f64, color: [u8; 4]) {
     fx.painter.fill_rect(
         fx.surface,
         Rect::from_size(Vec2::new(x, y), Vec2::new(w, h)),
@@ -79,7 +108,7 @@ impl Sparkline {
 
     /// Draw into `rect` at time `fx.t` (unused; kept for the uniform
     /// draw signature).
-    pub fn draw(&self, fx: &mut Fx, rect: Rect, _t: f64) {
+    pub fn draw(&self, fx: &mut ChartFx, rect: Rect, _t: f64) {
         if self.values.len() < 2 {
             return;
         }
@@ -161,7 +190,7 @@ impl BarChart {
     }
 
     /// Draw into `rect`.
-    pub fn draw(&self, fx: &mut Fx, rect: Rect, _t: f64) {
+    pub fn draw(&self, fx: &mut ChartFx, rect: Rect, _t: f64) {
         if self.values.is_empty() {
             return;
         }
@@ -210,7 +239,7 @@ impl LineChart {
     }
 
     /// Draw into `rect` with a 1 px frame and axis lines.
-    pub fn draw(&self, fx: &mut Fx, rect: Rect, _t: f64) {
+    pub fn draw(&self, fx: &mut ChartFx, rect: Rect, _t: f64) {
         if self.values.len() < 2 {
             return;
         }
@@ -288,7 +317,7 @@ impl AreaChart {
     }
 
     /// Draw into `rect`.
-    pub fn draw(&self, fx: &mut Fx, rect: Rect, _t: f64) {
+    pub fn draw(&self, fx: &mut ChartFx, rect: Rect, _t: f64) {
         if self.series.len() < 2 {
             return;
         }
@@ -335,7 +364,7 @@ impl Multiline {
     }
 
     /// Draw into `rect`.
-    pub fn draw(&self, fx: &mut Fx, rect: Rect, _t: f64) {
+    pub fn draw(&self, fx: &mut ChartFx, rect: Rect, _t: f64) {
         for (si, series) in self.series.iter().enumerate() {
             if series.len() < 2 {
                 continue;
@@ -386,7 +415,7 @@ impl Histogram {
     }
 
     /// Draw into `rect`.
-    pub fn draw(&self, fx: &mut Fx, rect: Rect, _t: f64) {
+    pub fn draw(&self, fx: &mut ChartFx, rect: Rect, _t: f64) {
         if self.values.is_empty() || self.bins == 0 {
             return;
         }
@@ -434,7 +463,7 @@ impl StackedBar {
     }
 
     /// Draw into `rect`.
-    pub fn draw(&self, fx: &mut Fx, rect: Rect, _t: f64) {
+    pub fn draw(&self, fx: &mut ChartFx, rect: Rect, _t: f64) {
         if self.rows.is_empty() {
             return;
         }
@@ -485,7 +514,7 @@ impl Candlestick {
     }
 
     /// Draw into `rect`.
-    pub fn draw(&self, fx: &mut Fx, rect: Rect, _t: f64) {
+    pub fn draw(&self, fx: &mut ChartFx, rect: Rect, _t: f64) {
         if self.candles.is_empty() {
             return;
         }
@@ -550,7 +579,7 @@ impl Heatmap {
     }
 
     /// Draw into `rect`.
-    pub fn draw(&self, fx: &mut Fx, rect: Rect, _t: f64) {
+    pub fn draw(&self, fx: &mut ChartFx, rect: Rect, _t: f64) {
         let rows = self.cells.len();
         if rows == 0 {
             return;
@@ -615,7 +644,7 @@ impl Correlation {
     }
 
     /// Draw into `rect`.
-    pub fn draw(&self, fx: &mut Fx, rect: Rect, _t: f64) {
+    pub fn draw(&self, fx: &mut ChartFx, rect: Rect, _t: f64) {
         let rows = self.cells.len();
         if rows == 0 {
             return;
@@ -674,7 +703,7 @@ impl Treemap {
     }
 
     /// Draw into `rect` (horizontal slice-and-dice).
-    pub fn draw(&self, fx: &mut Fx, rect: Rect, _t: f64) {
+    pub fn draw(&self, fx: &mut ChartFx, rect: Rect, _t: f64) {
         if self.values.is_empty() {
             return;
         }
@@ -721,7 +750,7 @@ impl Waterfall {
     }
 
     /// Draw into `rect`.
-    pub fn draw(&self, fx: &mut Fx, rect: Rect, _t: f64) {
+    pub fn draw(&self, fx: &mut ChartFx, rect: Rect, _t: f64) {
         if self.steps.is_empty() {
             return;
         }
@@ -789,7 +818,15 @@ fn polar_dir(angle: f64) -> Vec2 {
 }
 
 /// Filled quad between two radii across a small angular slice.
-fn arc_segment(fx: &mut Fx, center: Vec2, r_in: f64, r_out: f64, a0: f64, a1: f64, color: [u8; 4]) {
+fn arc_segment(
+    fx: &mut ChartFx,
+    center: Vec2,
+    r_in: f64,
+    r_out: f64,
+    a0: f64,
+    a1: f64,
+    color: [u8; 4],
+) {
     let p = |r: f64, a: f64| Vec2::new(center.x + r * a.cos(), center.y + r * a.sin());
     let quad = [p(r_in, a0), p(r_out, a0), p(r_out, a1), p(r_in, a1)];
     fill_poly(fx, &quad, color);
@@ -832,7 +869,7 @@ impl Gauge {
     }
 
     /// Draw into `rect` with the arc centered in the cell.
-    pub fn draw(&self, fx: &mut Fx, rect: Rect, _t: f64) {
+    pub fn draw(&self, fx: &mut ChartFx, rect: Rect, _t: f64) {
         let cx = (rect.x0 + rect.x1) * 0.5;
         let cy = (rect.y0 + rect.y1) * 0.5;
         let r = (rect.width().min(rect.height()) * 0.5) - 6.0;
@@ -907,7 +944,7 @@ impl Pie {
     }
 
     /// Draw into `rect`.
-    pub fn draw(&self, fx: &mut Fx, rect: Rect, _t: f64) {
+    pub fn draw(&self, fx: &mut ChartFx, rect: Rect, _t: f64) {
         if self.values.is_empty() {
             return;
         }
@@ -962,7 +999,7 @@ impl Radar {
     }
 
     /// Draw into `rect`.
-    pub fn draw(&self, fx: &mut Fx, rect: Rect, _t: f64) {
+    pub fn draw(&self, fx: &mut ChartFx, rect: Rect, _t: f64) {
         let k = self.values.len();
         if k < 3 {
             return;
@@ -1031,7 +1068,7 @@ impl Scatter {
     }
 
     /// Draw into `rect`.
-    pub fn draw(&self, fx: &mut Fx, rect: Rect, _t: f64) {
+    pub fn draw(&self, fx: &mut ChartFx, rect: Rect, _t: f64) {
         for &(nx, ny) in &self.points {
             let x = rect.x0 + nx.clamp(0.0, 1.0) * rect.width();
             let y = rect.y0 + (1.0 - ny.clamp(0.0, 1.0)) * rect.height();
@@ -1073,7 +1110,7 @@ impl OrderBook {
     }
 
     /// Draw into `rect`.
-    pub fn draw(&self, fx: &mut Fx, rect: Rect, _t: f64) {
+    pub fn draw(&self, fx: &mut ChartFx, rect: Rect, _t: f64) {
         let max = self
             .bids
             .iter()
@@ -1124,7 +1161,7 @@ impl Volume {
     }
 
     /// Draw into the bottom `fraction` of `rect`.
-    pub fn draw(&self, fx: &mut Fx, rect: Rect, fraction: f64) {
+    pub fn draw(&self, fx: &mut ChartFx, rect: Rect, fraction: f64) {
         if self.volumes.is_empty() {
             return;
         }
@@ -1162,7 +1199,7 @@ impl Backtest {
     }
 
     /// Draw into `rect`: line plus up/down triangles at trade points.
-    pub fn draw(&self, fx: &mut Fx, rect: Rect, _t: f64) {
+    pub fn draw(&self, fx: &mut ChartFx, rect: Rect, _t: f64) {
         if self.prices.len() < 2 {
             return;
         }
@@ -1233,7 +1270,7 @@ impl ChartGrid {
     }
 
     /// Draw into `rect`.
-    pub fn draw(&self, fx: &mut Fx, rect: Rect, _t: f64) {
+    pub fn draw(&self, fx: &mut ChartFx, rect: Rect, _t: f64) {
         let w = rect.width();
         let h = rect.height();
         for i in 1..self.vertical.max(1) {
@@ -1266,7 +1303,7 @@ impl Crosshair {
     }
 
     /// Draw over `rect`.
-    pub fn draw(&self, fx: &mut Fx, rect: Rect, _t: f64) {
+    pub fn draw(&self, fx: &mut ChartFx, rect: Rect, _t: f64) {
         let x = rect.x0 + self.at.0.clamp(0.0, 1.0) * rect.width();
         let y = rect.y0 + (1.0 - self.at.1.clamp(0.0, 1.0)) * rect.height();
         fill_rect(fx, x - 0.5, rect.y0, 1.0, rect.height(), self.color);

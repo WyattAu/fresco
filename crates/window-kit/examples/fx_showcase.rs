@@ -10,10 +10,8 @@
 
 use std::time::Instant;
 
-use fx::{
-    BarChart, CountUp, FlickeringGrid, GridPattern, LineChart, ScrambledText, ShimmerText,
-    Sparkline, StarField,
-};
+use fresco_charts::{BarChart, LineChart, Sparkline};
+use fx::{CountUp, FlickeringGrid, GridPattern, ScrambledText, ShimmerText, StarField};
 use widget_kit::{TreeItem, WidgetColors, WidgetKind, WidgetTree, paint_tree};
 use window_kit::event::{Event, LogicalSize};
 use window_kit::window::{EventSink, Window, WindowAttrs};
@@ -36,9 +34,6 @@ struct ShowcaseSink {
 impl ShowcaseSink {
     fn new() -> Self {
         let mut tree = WidgetTree::new();
-        // The fx catalog paints the whole surface; the widget tree
-        // contributes a settings-style overlay row (checkbox + tree)
-        // to prove fx + widgets compose in one frame.
         let root = tree.push(WidgetKind::Column { gap: 8.0 });
         let overlay = tree.push(WidgetKind::TreeList {
             items: vec![
@@ -88,38 +83,43 @@ impl ShowcaseSink {
             &mut self.painter,
             &WidgetColors::default(),
         );
-        // fx catalog on top: backgrounds first (under the tree), then
-        // charts and text in a column on the right side.
-        let mut painter = paint_kit::Painter::default();
+        // Backgrounds first (under the tree overlay).
         {
+            let mut painter = paint_kit::Painter::default();
             let mut fx = fx::Fx::new(&mut self.surface, &mut painter, t);
-            // Backgrounds cover the left half.
             GridPattern::new().draw(&mut fx, (W * 0.5) as usize, H as usize);
             FlickeringGrid::new().draw(&mut fx, (W * 0.5) as usize, H as usize);
             StarField::new().draw(&mut fx, (W * 0.5) as usize, H as usize);
         }
-        let mut fx = fx::Fx::new(&mut self.surface, &mut painter, t);
         // Charts column on the right.
-        let chart_x = W * 0.52;
-        let chart_w = W * 0.44;
-        Sparkline::new(vec![
-            3.0, 5.0, 4.0, 8.0, 6.0, 9.0, 7.0, 12.0, 10.0, 14.0, 11.0, 16.0,
-        ])
-        .draw(&mut fx, rect(chart_x, 20.0, chart_w, 90.0), t);
-        BarChart::new(vec![4.0, 9.0, 6.0, 12.0, 7.0, 10.0, 5.0, 11.0]).draw(
-            &mut fx,
-            rect(chart_x, 130.0, chart_w, 90.0),
-            t,
-        );
-        LineChart::new(vec![5.0, 7.0, 4.0, 9.0, 6.0, 11.0, 8.0, 6.0, 13.0]).draw(
-            &mut fx,
-            rect(chart_x, 240.0, chart_w, 90.0),
-            t,
-        );
+        {
+            let mut painter = paint_kit::Painter::default();
+            let mut chart_fx = fresco_charts::ChartFx::new(&mut self.surface, &mut painter, t);
+            let chart_x = W * 0.52;
+            let chart_w = W * 0.44;
+            Sparkline::new(vec![
+                3.0, 5.0, 4.0, 8.0, 6.0, 9.0, 7.0, 12.0, 10.0, 14.0, 11.0, 16.0,
+            ])
+            .draw(&mut chart_fx, rect(chart_x, 20.0, chart_w, 90.0), t);
+            BarChart::new(vec![4.0, 9.0, 6.0, 12.0, 7.0, 10.0, 5.0, 11.0]).draw(
+                &mut chart_fx,
+                rect(chart_x, 130.0, chart_w, 90.0),
+                t,
+            );
+            LineChart::new(vec![5.0, 7.0, 4.0, 9.0, 6.0, 11.0, 8.0, 6.0, 13.0]).draw(
+                &mut chart_fx,
+                rect(chart_x, 240.0, chart_w, 90.0),
+                t,
+            );
+        }
         // Text effects along the bottom.
-        CountUp::new(218.0).draw(&mut fx, 20.0, 340.0);
-        ScrambledText::new("fresco fx").draw(&mut fx, 120.0, 348.0);
-        ShimmerText::new("solid-fx + plychart capability").draw(&mut fx, 20.0, 380.0);
+        {
+            let mut painter = paint_kit::Painter::default();
+            let mut fx = fx::Fx::new(&mut self.surface, &mut painter, t);
+            CountUp::new(218.0).draw(&mut fx, 20.0, 340.0);
+            ScrambledText::new("fresco fx").draw(&mut fx, 120.0, 348.0);
+            ShimmerText::new("solid-fx + plychart capability").draw(&mut fx, 20.0, 380.0);
+        }
     }
 
     fn report(&self) {

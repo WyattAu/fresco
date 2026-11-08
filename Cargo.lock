@@ -681,6 +681,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "aa9a19cbb55df58761df49b23516a86d432839add4af60fc256da840f66ed35b"
 
 [[package]]
+name = "fresco-charts"
+version = "0.5.4"
+dependencies = [
+ "paint-kit",
+ "path-kit",
+ "plycore",
+ "render-conformance",
+]
+
+[[package]]
 name = "futures-core"
 version = "0.3.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1705,6 +1715,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "plycore"
+version = "0.2.1"
+source = "git+https://github.com/WyattAu/plychart#651b4effa234a86365ef890cbeaf0124cd11d30a"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "png"
 version = "0.18.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2696,6 +2715,7 @@ dependencies = [
 name = "window-kit"
 version = "0.5.4"
 dependencies = [
+ "fresco-charts",
  "fx",
  "paint-kit",
  "softbuffer",
