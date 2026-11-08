@@ -152,6 +152,12 @@ Phase 2 earns it.
   next lever is native strip text (vello glyph runs + system fonts),
   then kestrel decides.
 
+- 2026-11-08: backgrounds family expansion (0.5.5): Waves,
+  GradientMesh, Particles, NoiseField, Beams - 9 backgrounds total;
+  NoiseField defaults softened after contact-sheet visual review.
+  fx catalog: 14 components (backgrounds 9, text 3, charts 12
+  across two pages).
+
 - 2026-11-07: charts expansion (0.5.4): 12 of 22 plychart chart
   types ported to fx (added Area, Multiline, Histogram, StackedBar,
   Candlestick, Heatmap, Correlation, Treemap, Waterfall, Gauge, Pie,

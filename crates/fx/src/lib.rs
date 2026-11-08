@@ -38,7 +38,10 @@ pub mod charts;
 pub mod rand;
 pub mod text;
 
-pub use backgrounds::{DotPattern, FlickeringGrid, GridPattern, StarField};
+pub use backgrounds::{
+    Beams, DotPattern, FlickeringGrid, GradientMesh, GridPattern, NoiseField, Particles, StarField,
+    Waves,
+};
 pub use charts::{
     AreaChart, Backtest, BarChart, Candlestick, ChartGrid, Correlation, Crosshair, Gauge, Heatmap,
     Histogram, LineChart, Multiline, OrderBook, Pie, Radar, Scatter, Sparkline, StackedBar,

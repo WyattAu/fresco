@@ -81,6 +81,16 @@ Phase 4.1 completion: widget-level rendering on the strip backend.
 - The damage-plan path can now drive the strip backend with the real
   widget renderer.
 
+## 0.5.5 (2026-11-08)
+
+Backgrounds family expansion: 5 new procedural backgrounds - Waves
+(layered translucent sine bands), GradientMesh (per-pixel soft
+radial blob blend), Particles (drifting hashed field with wrap),
+NoiseField (per-cell hashed static), Beams (rotated translucent
+strips). Backgrounds family now 9 components; visual review of the
+contact sheet softened NoiseField defaults (density 0.4 -> 0.25,
+dimmer color) after seeing it dominate the sheet.
+
 ## 0.5.4 (2026-11-07)
 
 Charts expansion: 12 of 22 plychart types ported, all visually
