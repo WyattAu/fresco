@@ -152,6 +152,12 @@ Phase 2 earns it.
   next lever is native strip text (vello glyph runs + system fonts),
   then kestrel decides.
 
+- 2026-11-07: charts expansion (0.5.4): 12 of 22 plychart chart
+  types ported to fx (added Area, Multiline, Histogram, StackedBar,
+  Candlestick, Heatmap, Correlation, Treemap, Waterfall, Gauge, Pie,
+  Radar); chart catalog page v2 visually verified - no stack
+  defects found in polar/arc geometry.
+
 ## 3. Phases
 
 ### Phase 2: Pixels in a window (0.2 to 0.4) -> kestrel alpha
