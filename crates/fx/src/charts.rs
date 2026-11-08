@@ -980,7 +980,9 @@ impl Radar {
         // Web rings.
         for frac in [0.25, 0.5, 0.75, 1.0] {
             let mut ring: Vec<Vec2> = (0..k).map(|i| vertex(i, frac)).collect();
-            ring.push(ring[0]);
+            if let Some(&first) = ring.first() {
+                ring.push(first);
+            }
             fill_poly(fx, &ring, [self.web[0], self.web[1], self.web[2], 40]);
             // Ring outline via strip edges.
             for i in 0..k {
@@ -1000,7 +1002,9 @@ impl Radar {
                 vertex(i, v)
             })
             .collect();
-        data.push(data[0]);
+        if let Some(&first) = data.first() {
+            data.push(first);
+        }
         fill_poly(fx, &data, self.color);
     }
 }
@@ -1165,9 +1169,10 @@ impl Backtest {
         let (min, max) = min_max(&self.prices);
         let n = self.prices.len();
         let point = |i: usize| -> Vec2 {
+            let v = self.prices.get(i).copied().unwrap_or(min);
             Vec2::new(
                 rect.x0 + (i as f64 / (n - 1) as f64) * rect.width(),
-                rect.y0 + (1.0 - normalize(self.prices[i], min, max)) * rect.height(),
+                rect.y0 + (1.0 - normalize(v, min, max)) * rect.height(),
             )
         };
         for i in 0..n - 1 {
@@ -1208,6 +1213,12 @@ pub struct ChartGrid {
     pub horizontal: usize,
     /// Grid color, straight RGBA.
     pub color: [u8; 4],
+}
+
+impl Default for ChartGrid {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ChartGrid {

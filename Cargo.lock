@@ -96,7 +96,7 @@ checksum = "4b46cbb362ab8752921c97e041f5e366ee6297bd428a31275b9fcf1e380f7299"
 
 [[package]]
 name = "anim-kit"
-version = "0.5.3"
+version = "0.5.4"
 
 [[package]]
 name = "anstyle"
@@ -706,7 +706,7 @@ dependencies = [
 
 [[package]]
 name = "fx"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "anim-kit",
  "paint-kit",
@@ -1074,7 +1074,7 @@ dependencies = [
 
 [[package]]
 name = "layout-kit"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "taffy",
 ]
@@ -1548,7 +1548,7 @@ dependencies = [
 
 [[package]]
 name = "paint-kit"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "path-kit",
  "scene-kit",
@@ -1614,7 +1614,7 @@ dependencies = [
 
 [[package]]
 name = "path-kit"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "criterion",
 ]
@@ -1894,7 +1894,7 @@ checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
 name = "render-conformance"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "paint-kit",
  "path-kit",
@@ -1952,7 +1952,7 @@ dependencies = [
 
 [[package]]
 name = "scene-kit"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "path-kit",
 ]
@@ -2209,7 +2209,7 @@ dependencies = [
 
 [[package]]
 name = "text-kit"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "parley",
 ]
@@ -2668,7 +2668,7 @@ dependencies = [
 
 [[package]]
 name = "widget-kit"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "a11y-kit",
  "accesskit",
@@ -2694,7 +2694,7 @@ dependencies = [
 
 [[package]]
 name = "window-kit"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "fx",
  "paint-kit",
