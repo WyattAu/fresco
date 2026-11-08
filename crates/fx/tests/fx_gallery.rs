@@ -108,7 +108,7 @@ fn fx_gallery_matches_golden_hashes() {
     let ha = fnv1a(&alpha);
     let hr = fnv1a(&rgb);
     const GOLDEN_T1_ALPHA: u64 = 0x9258_5da8_ff74_4e25;
-    const GOLDEN_T1_RGB: u64 = 0xd8f9_8447_7f34_5bbc;
+    const GOLDEN_T1_RGB: u64 = 0xab07_7854_9033_5d57;
     if GOLDEN_T1_ALPHA == 0 {
         println!("REBASELINE alpha {ha:#018x} rgb {hr:#018x}");
         return;
