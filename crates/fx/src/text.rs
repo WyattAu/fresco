@@ -2,10 +2,43 @@
 //! shimmer — all rendered through text-kit's 3x5 micro-font, all
 //! deterministic in time.
 
+use paint_kit::{Paint, Rect, Solid, Vec2};
+
 use crate::Fx;
 use crate::rand::FxRand;
 use paint_kit::{Painter, Surface};
 use text_kit::microfont;
+/// Draw a single micro-font character.
+fn draw_micro_char(
+    surface: &mut Surface,
+    painter: &mut Painter,
+    ch: char,
+    x: f64,
+    y: f64,
+    px_size: f64,
+    color: [u8; 4],
+) {
+    let scale = ((px_size / 5.0).round() as u32).max(1);
+    let baseline_y = y + (px_size * 2.5) - (f64::from(scale) * 5.0 * 0.5);
+    if let Some(bitmap) = microfont::micro_bitmap(ch, scale) {
+        for gy in 0..bitmap.height {
+            for gx in 0..bitmap.width {
+                let idx = gy as usize * bitmap.width as usize + gx as usize;
+                let Some(cov) = bitmap.coverage.get(idx) else {
+                    continue;
+                };
+                if *cov == 0 {
+                    continue;
+                }
+                let px = Rect::from_size(
+                    Vec2::new(x + f64::from(gx), baseline_y + f64::from(gy)),
+                    Vec2::new(1.0, 1.0),
+                );
+                painter.fill_rect(surface, px, &Paint::from(Solid::premul(color)));
+            }
+        }
+    }
+}
 
 /// Draw a micro-font string: same geometry as widget-kit's label
 /// blitter, `scale` derived from `px_size`.
@@ -45,8 +78,6 @@ fn draw_micro(
         pen_x += advance;
     }
 }
-
-use paint_kit::{Paint, Rect, Solid, Vec2};
 
 /// CountUp: a number animating from `from` to `to` with an ease-out
 /// curve over `duration` seconds, rendered as micro-font digits.
@@ -235,6 +266,251 @@ impl ShimmerText {
                 }
             }
             pen_x += advance;
+        }
+    }
+}
+
+/// GlitchText: RGB channel-split text effect — red/cyan ghost copies
+/// offset horizontally from the base glyphs, oscillating with time
+/// (solid-fx GlitchText family).
+pub struct GlitchText {
+    /// The text.
+    pub text: String,
+    /// Split distance in px (how far the ghosts offset).
+    pub split: f64,
+    /// Glitch intensity in `[0, 1]`.
+    pub intensity: f64,
+    /// Base text color, straight RGBA.
+    pub color: [u8; 4],
+    /// Pixel size.
+    pub px_size: f64,
+}
+
+impl GlitchText {
+    /// Defaults: 4 px split, 0.5 intensity.
+    #[must_use]
+    pub fn new(text: impl Into<String>) -> Self {
+        GlitchText {
+            text: text.into(),
+            split: 4.0,
+            intensity: 0.5,
+            color: [230, 234, 244, 255],
+            px_size: 16.0,
+        }
+    }
+
+    /// Draw at time `fx.t` with a glitch phase from the clock.
+    pub fn draw(&self, fx: &mut Fx, x: f64, y: f64) {
+        let phase = (fx.t * 7.0).sin() * self.intensity;
+        let offset = self.split * phase;
+        // Red ghost (offset left).
+        draw_micro(
+            fx.surface,
+            fx.painter,
+            &self.text,
+            x - offset,
+            y,
+            self.px_size,
+            [255, 60, 60, 160],
+        );
+        // Cyan ghost (offset right).
+        draw_micro(
+            fx.surface,
+            fx.painter,
+            &self.text,
+            x + offset,
+            y,
+            self.px_size,
+            [60, 220, 255, 160],
+        );
+        // Base text on top.
+        draw_micro(
+            fx.surface,
+            fx.painter,
+            &self.text,
+            x,
+            y,
+            self.px_size,
+            self.color,
+        );
+    }
+}
+
+/// FallingText: characters fall from above with gravity and settle
+/// at their target y position (solid-fx FallingText family).
+pub struct FallingText {
+    /// The text.
+    pub text: String,
+    /// Text color, straight RGBA.
+    pub color: [u8; 4],
+    /// Pixel size.
+    pub px_size: f64,
+    /// Gravity acceleration in px/s².
+    pub gravity: f64,
+    /// Settle delay per character in seconds (stagger).
+    pub stagger: f64,
+}
+
+impl FallingText {
+    /// Defaults: 800 px/s² gravity, 0.05 s stagger.
+    #[must_use]
+    pub fn new(text: impl Into<String>) -> Self {
+        FallingText {
+            text: text.into(),
+            color: [230, 234, 244, 255],
+            px_size: 16.0,
+            gravity: 800.0,
+            stagger: 0.05,
+        }
+    }
+
+    /// Draw at time `fx.t`. Each character falls from above with
+    /// gravity until it reaches its target position.
+    pub fn draw(&self, fx: &mut Fx, x: f64, y: f64) {
+        let advance = self.px_size * 0.6;
+        for (i, ch) in self.text.chars().enumerate() {
+            let char_x = x + i as f64 * advance;
+            // Each char has its own stagger delay.
+            let delay = i as f64 * self.stagger;
+            let local_t = (fx.t - delay).max(0.0);
+            // Fall from 80 px above with gravity: y = y0 + 0.5*g*t²
+            let fall_dist = 0.5 * self.gravity * local_t * local_t;
+            let char_y = y - 80.0 + fall_dist.min(80.0);
+            // Alpha fades in as the char approaches its target.
+            let dist_remaining = (80.0 - fall_dist).max(0.0);
+            let alpha = ((1.0 - dist_remaining / 80.0) * 255.0).round() as u8;
+            let color = [self.color[0], self.color[1], self.color[2], alpha];
+            draw_micro_char(
+                fx.surface,
+                fx.painter,
+                ch,
+                char_x,
+                char_y,
+                self.px_size,
+                color,
+            );
+        }
+    }
+}
+
+/// ShuffleText: characters cycle through random glyphs before
+/// settling into their target positions left to right (solid-fx
+/// Shuffle family).
+pub struct ShuffleText {
+    /// The text.
+    pub text: String,
+    /// Text color, straight RGBA.
+    pub color: [u8; 4],
+    /// Pixel size.
+    pub px_size: f64,
+    /// Per-instance seed.
+    pub seed: u64,
+    /// Total shuffle duration in seconds.
+    pub duration: f64,
+    /// Scramble charset.
+    pub charset: Vec<char>,
+}
+
+impl ShuffleText {
+    /// Defaults: `!<>-_\/[]{}=+*#?`, 1.5 s.
+    #[must_use]
+    pub fn new(text: impl Into<String>) -> Self {
+        ShuffleText {
+            text: text.into(),
+            color: [230, 234, 244, 255],
+            px_size: 16.0,
+            seed: 0x5EED,
+            duration: 1.5,
+            charset: "!<>-_\\/[]{}=+*#?".chars().collect(),
+        }
+    }
+
+    /// Draw at time `fx.t`. Each character resolves at a staggered
+    /// threshold; unresolved positions show random charset glyphs.
+    pub fn draw(&self, fx: &mut Fx, x: f64, y: f64) {
+        let n = self.text.chars().count();
+        let t = (fx.t / self.duration.max(0.001)).clamp(0.0, 1.0);
+        let mut rand = FxRand::new(self.seed);
+        let advance = self.px_size * 0.6;
+        let mut pen_x = x;
+        for (i, ch) in self.text.chars().enumerate() {
+            let resolve_at = 0.3 + (i as f64 / n.max(1) as f64) * 0.6;
+            let glyph = if t >= resolve_at {
+                ch
+            } else {
+                *rand.pick(&self.charset, &'?')
+            };
+            draw_micro_char(
+                fx.surface,
+                fx.painter,
+                glyph,
+                pen_x,
+                y,
+                self.px_size,
+                self.color,
+            );
+            pen_x += advance;
+        }
+    }
+}
+
+/// DecryptedText: characters resolve with a scramble effect —
+/// unrevealed positions show random glyphs, revealed positions show
+/// the target character, sweeping left to right with a per-character
+/// random delay (solid-fx DecryptedText family).
+pub struct DecryptedText {
+    /// The final text.
+    pub text: String,
+    /// Text color, straight RGBA.
+    pub color: [u8; 4],
+    /// Pixel size.
+    pub px_size: f64,
+    /// Scramble charset.
+    pub charset: Vec<char>,
+    /// Per-instance seed.
+    pub seed: u64,
+    /// Duration in seconds.
+    pub duration: f64,
+}
+
+impl DecryptedText {
+    /// Defaults: `!@#$%&*`, 2 s.
+    #[must_use]
+    pub fn new(text: impl Into<String>) -> Self {
+        DecryptedText {
+            text: text.into(),
+            color: [230, 234, 244, 255],
+            px_size: 16.0,
+            charset: "!@#$%&*".chars().collect(),
+            seed: 0xDECADE,
+            duration: 2.0,
+        }
+    }
+
+    /// Draw at time `fx.t`. Each character resolves at a random
+    /// threshold; unresolved positions show random charset glyphs.
+    pub fn draw(&self, fx: &mut Fx, x: f64, y: f64) {
+        let n = self.text.chars().count();
+        let t = (fx.t / self.duration.max(0.001)).clamp(0.0, 1.0);
+        let mut rand = FxRand::new(self.seed);
+        let mut pen_x = x;
+        for (i, ch) in self.text.chars().enumerate() {
+            let resolve_at = 0.2 + (i as f64 / n.max(1) as f64) * 0.6;
+            let glyph = if t >= resolve_at {
+                ch
+            } else {
+                *rand.pick(&self.charset, &'?')
+            };
+            draw_micro_char(
+                fx.surface,
+                fx.painter,
+                glyph,
+                pen_x,
+                y,
+                self.px_size,
+                self.color,
+            );
+            pen_x += self.px_size * 0.6;
         }
     }
 }
