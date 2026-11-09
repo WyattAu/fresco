@@ -15,6 +15,7 @@ path-kit = { workspace = true }
 plycore = { git = "https://github.com/WyattAu/plychart", package = "plycore" }
 
 [dev-dependencies]
+fx = { workspace = true }
 render-conformance = { path = "../render-conformance" }
 
 [lints.rust]
