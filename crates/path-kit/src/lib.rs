@@ -30,6 +30,7 @@ pub mod ops;
 pub mod path;
 pub mod pred;
 pub mod quadtree;
+pub mod sect;
 pub mod stroke;
 
 pub use bez::{CubicBez, QuadBez};
