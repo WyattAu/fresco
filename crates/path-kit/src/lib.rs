@@ -26,6 +26,7 @@ pub mod flatten;
 pub mod geom;
 pub mod hit;
 pub mod offset;
+pub mod ops;
 pub mod path;
 pub mod pred;
 pub mod quadtree;
