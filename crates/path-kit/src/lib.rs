@@ -19,11 +19,13 @@
 
 #![forbid(unsafe_code)]
 
+pub mod arc;
 pub mod bez;
 pub mod dash;
 pub mod flatten;
 pub mod geom;
 pub mod hit;
+pub mod offset;
 pub mod path;
 pub mod pred;
 pub mod stroke;
