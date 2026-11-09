@@ -16,11 +16,13 @@
 #![forbid(unsafe_code)]
 
 pub mod arena;
+pub mod camera;
 pub mod damage;
 pub mod flatten;
 pub mod scene;
 
 pub use arena::{Arena, Id};
+pub use camera::Camera;
 pub use damage::{DamageTracker, FramePlan};
 pub use flatten::{Command, DrawList, SortKey, flatten_scene};
 pub use scene::{Brush, Draw, Node, Scene};

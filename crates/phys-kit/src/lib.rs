@@ -10,6 +10,7 @@
 //! particle debris — anything a 2D game engine or CAD sketch
 //! solver needs at the low end.
 
+pub mod clock;
 pub mod collision;
 
 use path_kit::Vec2;
