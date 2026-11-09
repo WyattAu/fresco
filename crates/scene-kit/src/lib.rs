@@ -19,6 +19,7 @@ pub mod arena;
 pub mod camera;
 pub mod damage;
 pub mod flatten;
+pub mod pick;
 pub mod scene;
 
 pub use arena::{Arena, Id};
