@@ -176,6 +176,20 @@ impl Rect {
         if r.is_empty() { None } else { Some(r) }
     }
 
+    /// Whether the two rectangles overlap at all (inclusive of
+    /// edge-touching, consistent with [`Rect::intersect`]).
+    #[must_use]
+    pub fn intersects(&self, other: Rect) -> bool {
+        self.x0 <= other.x1 && other.x0 <= self.x1 && self.y0 <= other.y1 && other.y0 <= self.y1
+    }
+
+    /// Whether `other` is fully contained in this rectangle
+    /// (inclusive of edges).
+    #[must_use]
+    pub fn contains_rect(&self, other: Rect) -> bool {
+        other.x0 >= self.x0 && other.x1 <= self.x1 && other.y0 >= self.y0 && other.y1 <= self.y1
+    }
+
     /// Point containment.
     #[must_use]
     pub fn contains(&self, p: Vec2) -> bool {

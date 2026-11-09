@@ -28,6 +28,7 @@ pub mod hit;
 pub mod offset;
 pub mod path;
 pub mod pred;
+pub mod quadtree;
 pub mod stroke;
 
 pub use bez::{CubicBez, QuadBez};
