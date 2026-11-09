@@ -10,6 +10,8 @@
 //! particle debris — anything a 2D game engine or CAD sketch
 //! solver needs at the low end.
 
+pub mod collision;
+
 use path_kit::Vec2;
 
 /// A point mass. Velocity is implicit: `pos - prev`.
