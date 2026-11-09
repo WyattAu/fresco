@@ -11,6 +11,7 @@
 //! solver needs at the low end.
 
 pub mod clock;
+pub mod cloth;
 pub mod collision;
 
 use path_kit::Vec2;
