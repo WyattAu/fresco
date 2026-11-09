@@ -96,6 +96,11 @@ pub struct World {
     pub gravity: Vec2,
     /// Constraint-relaxation iterations per step.
     pub iterations: u32,
+    /// Uniform particle radius for many-body collision. `0.0`
+    /// disables particle-particle resolution.
+    pub particle_radius: f64,
+    /// Static boxes particles are pushed out of each step.
+    pub static_boxes: Vec<crate::collision::StaticBox>,
 }
 
 impl World {
@@ -107,6 +112,8 @@ impl World {
             constraints: Vec::new(),
             gravity: Vec2::new(0.0, 500.0),
             iterations: 8,
+            particle_radius: 0.0,
+            static_boxes: Vec::new(),
         }
     }
 
@@ -145,9 +152,67 @@ impl World {
             p.prev = p.pos;
             p.pos = next;
         }
+        // Many-body collision: quadtree broad phase, circle narrow
+        // phase, inv-mass-weighted positional resolution.
+        if self.particle_radius > 0.0 {
+            self.solve_particle_collisions();
+        }
+        for bx in &self.static_boxes {
+            for p in &mut self.particles {
+                crate::collision::StaticBox::resolve_particle_box(p, bx);
+            }
+        }
         // Relax.
         for _ in 0..self.iterations {
             self.relax_once();
+        }
+    }
+
+    fn solve_particle_collisions(&mut self) {
+        let r = self.particle_radius;
+        // Broad phase: index each particle's AABB.
+        let mut qt = path_kit::Quadtree::new(path_kit::Rect::from_points(
+            Vec2::new(-1.0e6, -1.0e6),
+            Vec2::new(1.0e6, 1.0e6),
+        ));
+        for (i, p) in self.particles.iter().enumerate() {
+            let idx = u32::try_from(i).unwrap_or(u32::MAX);
+            qt.insert(
+                path_kit::Rect::from_points(
+                    Vec2::new(p.pos.x - r, p.pos.y - r),
+                    Vec2::new(p.pos.x + r, p.pos.y + r),
+                ),
+                idx,
+            );
+        }
+        // Narrow phase: resolve each unordered pair once.
+        for i in 0..self.particles.len() {
+            let pi = match self.particles.get(i) {
+                Some(&p) => p,
+                None => continue,
+            };
+            if pi.inv_mass <= 0.0 {
+                continue;
+            }
+            let region = path_kit::Rect::from_points(
+                Vec2::new(pi.pos.x - r, pi.pos.y - r),
+                Vec2::new(pi.pos.x + r, pi.pos.y + r),
+            );
+            for j in qt.query(region) {
+                let jj = j as usize;
+                if jj <= i || jj >= self.particles.len() {
+                    continue;
+                }
+                // Split borrows: resolve via indices.
+                let (left, right) = self.particles.split_at_mut(jj);
+                let (mut a, b_opt) = (left.get(i).copied(), right.first_mut());
+                if let (Some(pa), Some(pb)) = (&mut a, b_opt) {
+                    let resolved = crate::collision::Circle::resolve_circle_circle(pa, r, pb, r);
+                    if resolved && let Some(slot) = left.get_mut(i) {
+                        *slot = *pa;
+                    }
+                }
+            }
         }
     }
 
@@ -320,5 +385,128 @@ mod tests {
             damped < undamped,
             "damping must reduce speed: {damped} < {undamped}"
         );
+    }
+}
+
+#[cfg(test)]
+mod many_body_tests {
+    use super::*;
+    use crate::collision::{Circle, StaticBox};
+    use path_kit::Vec2;
+
+    /// Deepest interpenetration between any pair of particles.
+    fn max_overlap(w: &World, r: f64) -> f64 {
+        let n = w.particles.len();
+        let mut worst = 0.0_f64;
+        for i in 0..n {
+            for j in (i + 1)..n {
+                let (Some(&a), Some(&b)) = (w.particles.get(i), w.particles.get(j)) else {
+                    continue;
+                };
+                let d = Circle::overlap_depth(Circle::new(a.pos, r), Circle::new(b.pos, r));
+                worst = worst.max(d);
+            }
+        }
+        worst
+    }
+
+    #[test]
+    fn overlapping_pair_separates() {
+        let mut w = World::new();
+        w.gravity = Vec2::ZERO;
+        w.particle_radius = 10.0;
+        w.add(Particle::free(Vec2::new(0.0, 0.0), 1.0));
+        w.add(Particle::free(Vec2::new(5.0, 0.0), 1.0));
+        for _ in 0..5 {
+            w.step(1.0 / 60.0);
+        }
+        let d = w
+            .particles
+            .first()
+            .zip(w.particles.get(1))
+            .map(|(a, b)| a.pos.distance(b.pos))
+            .unwrap_or(0.0);
+        assert!(d >= 19.9, "pair pushed apart: dist {d}");
+    }
+
+    #[test]
+    fn grains_settle_in_a_box_without_deep_overlap() {
+        let mut w = World::new();
+        w.particle_radius = 6.0;
+        // Floor slab.
+        w.static_boxes.push(StaticBox::new(
+            Vec2::new(-200.0, 200.0),
+            Vec2::new(200.0, 400.0),
+        ));
+        // Drop a loose 5x4 grid of grains.
+        for gy in 0..4_u32 {
+            for gx in 0..5_u32 {
+                w.add(Particle::free(
+                    Vec2::new(f64::from(gx) * 10.0 - 20.0, f64::from(gy) * 10.0 - 100.0),
+                    1.0,
+                ));
+            }
+        }
+        for step in 0..240 {
+            w.step(1.0 / 60.0);
+            let max_y = w.particles.iter().map(|p| p.pos.y).fold(0.0_f64, f64::max);
+            assert!(
+                max_y <= 201.0,
+                "grain escaped the floor at step {step}: max_y {max_y}"
+            );
+        }
+        let worst = max_overlap(&w, w.particle_radius);
+        assert!(
+            worst < 2.0,
+            "settled grains must not interpenetrate deeply: {worst}"
+        );
+        // Every grain must rest at or above the floor's top face
+        // (push-out lands within an epsilon of y = 200).
+        let above = w.particles.iter().all(|p| p.pos.y < 200.0);
+        assert!(above, "all grains rest on the floor");
+    }
+
+    #[test]
+    fn many_body_determinism_with_quadtree_broad_phase() {
+        let build = || {
+            let mut w = World::new();
+            w.particle_radius = 5.0;
+            w.static_boxes.push(StaticBox::new(
+                Vec2::new(-100.0, 100.0),
+                Vec2::new(100.0, 300.0),
+            ));
+            for i in 0..30_u32 {
+                let x = (f64::from(i % 6) - 2.5) * 9.0;
+                let y = -f64::from(i / 6) * 9.0 - 40.0;
+                w.add(Particle::free(Vec2::new(x, y), 1.0));
+            }
+            for _ in 0..120 {
+                w.step(1.0 / 60.0);
+            }
+            w.particles
+                .iter()
+                .map(|p| (p.pos.x, p.pos.y))
+                .collect::<Vec<_>>()
+        };
+        let a = build();
+        let b = build();
+        assert_eq!(a, b, "quadtree broad phase must stay deterministic");
+    }
+
+    #[test]
+    fn pinned_particles_resist_displacement() {
+        let mut w = World::new();
+        w.gravity = Vec2::ZERO;
+        w.particle_radius = 10.0;
+        w.add(Particle::pinned(Vec2::new(0.0, 0.0)));
+        w.add(Particle::free(Vec2::new(12.0, 0.0), 1.0));
+        for _ in 0..10 {
+            w.step(1.0 / 60.0);
+        }
+        let pinned_ok = w
+            .particles
+            .first()
+            .is_some_and(|p| p.pos.distance(Vec2::ZERO) < 1e-9);
+        assert!(pinned_ok, "pinned particle unmoved");
     }
 }

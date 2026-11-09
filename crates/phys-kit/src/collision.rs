@@ -55,8 +55,16 @@ impl Circle {
         }
         let wa = a.inv_mass / w_sum;
         let wb = b.inv_mass / w_sum;
-        a.pos = Vec2::new(a.pos.x - dir.x * depth * wa, a.pos.y - dir.y * depth * wa);
-        b.pos = Vec2::new(b.pos.x + dir.x * depth * wb, b.pos.y + dir.y * depth * wb);
+        // Velocity-neutral correction: shift prev by the same delta
+        // so verlet's implicit velocity (pos - prev) does not absorb
+        // the teleport (which would inject energy and destabilize
+        // stacks).
+        let da = Vec2::new(-dir.x * depth * wa, -dir.y * depth * wa);
+        let db = Vec2::new(dir.x * depth * wb, dir.y * depth * wb);
+        a.pos = Vec2::new(a.pos.x + da.x, a.pos.y + da.y);
+        a.prev = Vec2::new(a.prev.x + da.x, a.prev.y + da.y);
+        b.pos = Vec2::new(b.pos.x + db.x, b.pos.y + db.y);
+        b.prev = Vec2::new(b.prev.x + db.x, b.prev.y + db.y);
         true
     }
 }
@@ -113,7 +121,11 @@ impl StaticBox {
         } else {
             (p.pos.x, box_.max.y + EPS)
         };
+        // Velocity-neutral: shift prev by the push-out delta.
+        let dx = nx - p.pos.x;
+        let dy = ny - p.pos.y;
         p.pos = Vec2::new(nx, ny);
+        p.prev = Vec2::new(p.prev.x + dx, p.prev.y + dy);
         true
     }
 }

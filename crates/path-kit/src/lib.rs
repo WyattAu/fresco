@@ -38,6 +38,7 @@ pub use geom::{Affine, Rect, Vec2};
 pub use hit::{FillRule, point_in_path, winding_number};
 pub use path::{Path, PathSeg, Poly};
 pub use pred::orient2d;
+pub use quadtree::Quadtree;
 pub use stroke::{Cap, Join, stroke_poly};
 
 /// Maximum recursion depth for adaptive subdivision. Bounds worst-case
