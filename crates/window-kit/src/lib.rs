@@ -21,6 +21,7 @@
 pub mod backend;
 pub mod clock;
 pub mod event;
+pub mod input;
 pub mod inspector;
 pub mod window;
 
