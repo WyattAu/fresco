@@ -13,6 +13,7 @@
 pub mod clock;
 pub mod cloth;
 pub mod collision;
+pub mod rigid;
 
 use path_kit::Vec2;
 
