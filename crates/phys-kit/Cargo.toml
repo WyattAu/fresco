@@ -1,0 +1,24 @@
+[package]
+name = "phys-kit"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Verlet particle physics for the fresco UI engine: ropes, cloth, and soft-body constraints, deterministic and headless-testable"
+keywords = ["physics", "verlet", "simulation", "graphics"]
+categories = ["graphics", "mathematics", "simulation"]
+exclude = ["/target"]
+
+[dependencies]
+path-kit = { workspace = true }
+
+[lints.rust]
+missing_docs = "deny"
+unsafe_code = "forbid"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
