@@ -286,6 +286,25 @@ impl Painter {
     /// Draw an image with nearest-neighbor sampling into `dst` (device
     /// pixels), respecting the clip. Premultiplied over-compositing.
     pub fn draw_image(&mut self, surface: &mut Surface, image: &Image, dst: Rect) {
+        let src = Rect::from_size(
+            Vec2::ZERO,
+            Vec2::new(
+                f64::from(u32::try_from(image.width).unwrap_or(0)),
+                f64::from(u32::try_from(image.height).unwrap_or(0)),
+            ),
+        );
+        self.draw_image_region(surface, image, src, dst);
+    }
+
+    /// Draw a sub-region of `image` (sprite-atlas source rect in
+    /// pixels) scaled into `dst`.
+    pub fn draw_image_region(
+        &mut self,
+        surface: &mut Surface,
+        image: &Image,
+        src: Rect,
+        dst: Rect,
+    ) {
         let full = surface.rect();
         let Some(clip) = self
             .clip()
@@ -298,16 +317,23 @@ impl Painter {
         if clip.is_empty() || image.width == 0 || image.height == 0 {
             return;
         }
+        // Normalized source window.
+        let iw = f64::from(u32::try_from(image.width).unwrap_or(1));
+        let ih = f64::from(u32::try_from(image.height).unwrap_or(1));
+        let u0 = src.x0 / iw;
+        let v0 = src.y0 / ih;
+        let u1 = src.x1 / iw;
+        let v1 = src.y1 / ih;
         let y0 = clip.y0.floor().max(0.0) as usize;
         let y1 = (clip.y1.ceil() as usize).min(surface.height());
         let x0 = clip.x0.floor().max(0.0) as usize;
         let x1 = (clip.x1.ceil() as usize).min(surface.width());
         for row in y0..y1 {
             let cy = f64::from(u32::try_from(row).unwrap_or(0)) + 0.5;
-            let v = (cy - dst.y0) / dst.height().max(1e-9);
+            let v = v0 + (cy - dst.y0) / dst.height().max(1e-9) * (v1 - v0);
             for col in x0..x1 {
                 let cx = f64::from(u32::try_from(col).unwrap_or(0)) + 0.5;
-                let u = (cx - dst.x0) / dst.width().max(1e-9);
+                let u = u0 + (cx - dst.x0) / dst.width().max(1e-9) * (u1 - u0);
                 let px = image.sample(u, v);
                 surface.blend_pixel(col, row, px);
             }

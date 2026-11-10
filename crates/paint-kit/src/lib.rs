@@ -16,6 +16,7 @@
 //! golden images and any future GPU backend must match it (ADR-0004).
 #![forbid(unsafe_code)]
 
+pub mod atlas;
 pub mod paint;
 pub mod painter;
 pub mod raster;
