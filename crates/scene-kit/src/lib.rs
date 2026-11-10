@@ -21,6 +21,7 @@ pub mod damage;
 pub mod export;
 pub mod flatten;
 pub mod history;
+pub mod import;
 pub mod pick;
 pub mod scene;
 

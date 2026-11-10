@@ -20,6 +20,13 @@ fn fmt_num(v: f64) -> String {
     }
 }
 
+/// Public wrapper: serialize segments as an SVG `d` attribute body
+/// (the import parser consumes exactly this dialect).
+#[must_use]
+pub fn path_data_public(segs: &[PathSeg]) -> String {
+    path_data(segs)
+}
+
 /// Append a path's segments as an SVG `d` attribute body.
 fn path_data(segs: &[PathSeg]) -> String {
     let mut d = String::new();
