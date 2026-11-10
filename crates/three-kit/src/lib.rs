@@ -6,7 +6,9 @@
 //! texture mapping build on this.
 
 pub mod math;
+pub mod mesh;
 pub mod raster;
 
 pub use math::{Mat4, Vec3};
+pub use mesh::{Light, Mesh};
 pub use raster::{Frame, Triangle, Vertex};
