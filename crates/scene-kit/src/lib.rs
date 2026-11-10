@@ -18,6 +18,7 @@
 pub mod arena;
 pub mod camera;
 pub mod damage;
+pub mod dxf;
 pub mod export;
 pub mod flatten;
 pub mod history;

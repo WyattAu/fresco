@@ -33,6 +33,7 @@ pub mod quadtree;
 pub mod sect;
 pub mod stroke;
 
+pub use arc::Arc;
 pub use bez::{CubicBez, QuadBez};
 pub use geom::{Affine, Rect, Vec2};
 pub use hit::{FillRule, point_in_path, winding_number};
