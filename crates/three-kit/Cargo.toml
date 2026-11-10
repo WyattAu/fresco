@@ -1,0 +1,25 @@
+[package]
+name = "three-kit"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "3D foundation for the fresco game-engine stack: vector/matrix math, perspective projection, and a depth-buffered software triangle rasterizer over paint-kit surfaces"
+keywords = ["3d", "graphics", "rasterizer", "matrix"]
+categories = ["graphics", "mathematics", "rendering"]
+exclude = ["/target"]
+
+[dependencies]
+path-kit = { workspace = true }
+paint-kit = { workspace = true }
+
+[lints.rust]
+missing_docs = "deny"
+unsafe_code = "forbid"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
