@@ -121,11 +121,21 @@ impl StaticBox {
         } else {
             (p.pos.x, box_.max.y + EPS)
         };
-        // Velocity-neutral: shift prev by the push-out delta.
-        let dx = nx - p.pos.x;
-        let dy = ny - p.pos.y;
+        // Inelastic static contact: push out, then absorb the normal
+        // velocity component (keep tangential). Pure velocity-neutral
+        // shifting made falling grains "ride" the floor teleporting
+        // every step while gravity accumulated normal velocity until
+        // the nearest face flipped to the slab bottom and the grain
+        // tunneled through.
+        let d = Vec2::new(nx - p.pos.x, ny - p.pos.y);
+        let Some(dir) = Vec2::new(d.x, d.y).normalize() else {
+            return true; // zero-length push-out: nothing to absorb
+        };
+        let vel = Vec2::new(p.pos.x - p.prev.x, p.pos.y - p.prev.y);
+        let vn = vel.dot(dir);
+        let vel_t = Vec2::new(vel.x - dir.x * vn, vel.y - dir.y * vn);
         p.pos = Vec2::new(nx, ny);
-        p.prev = Vec2::new(p.prev.x + dx, p.prev.y + dy);
+        p.prev = Vec2::new(nx - vel_t.x, ny - vel_t.y);
         true
     }
 }

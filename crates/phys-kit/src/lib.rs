@@ -154,19 +154,20 @@ impl World {
             p.prev = p.pos;
             p.pos = next;
         }
-        // Many-body collision: quadtree broad phase, circle narrow
-        // phase, inv-mass-weighted positional resolution.
-        if self.particle_radius > 0.0 {
-            self.solve_particle_collisions();
-        }
-        for bx in &self.static_boxes {
-            for p in &mut self.particles {
-                crate::collision::StaticBox::resolve_particle_box(p, bx);
-            }
-        }
-        // Relax.
+        // PBD projection loop: many-body collision, distance
+        // constraints, and static-box push-out interleaved per
+        // iteration so no single pass can accumulate enough
+        // displacement to tunnel through a slab.
         for _ in 0..self.iterations {
+            if self.particle_radius > 0.0 {
+                self.solve_particle_collisions();
+            }
             self.relax_once();
+            for bx in &self.static_boxes {
+                for p in &mut self.particles {
+                    crate::collision::StaticBox::resolve_particle_box(p, bx);
+                }
+            }
         }
     }
 
