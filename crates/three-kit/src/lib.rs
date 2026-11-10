@@ -7,8 +7,10 @@
 
 pub mod math;
 pub mod mesh;
+pub mod obj;
 pub mod raster;
 
 pub use math::{Mat4, Vec3};
 pub use mesh::{Light, Mesh};
+pub use obj::{ObjMesh, import_obj};
 pub use raster::{Frame, Triangle, Vertex};
