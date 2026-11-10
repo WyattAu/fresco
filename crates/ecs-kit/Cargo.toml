@@ -1,0 +1,23 @@
+[package]
+name = "ecs-kit"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Entity-component-system for the fresco game-engine stack: generational entities, typed component storages, deterministic queries"
+keywords = ["ecs", "entity", "game", "graphics"]
+categories = ["graphics", "data-structures", "game-development"]
+exclude = ["/target"]
+
+[dependencies]
+
+[lints.rust]
+missing_docs = "deny"
+unsafe_code = "forbid"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
