@@ -25,8 +25,8 @@ pub struct Triangle {
 }
 
 /// A texture-mapped triangle: per-vertex UVs in normalized image
-/// space. UVs interpolate affinely in screen space (documented
-/// approximation: no perspective-correct divide).
+/// space. UVs interpolate perspective-correctly via per-vertex
+/// `1/w` interpolation and per-pixel renormalization.
 #[derive(Clone, Copy, Debug)]
 pub struct TexturedTriangle {
     /// Three vertices.
@@ -110,6 +110,7 @@ impl Frame {
     ) {
         for t in triangles {
             let mut pts = [(0.0_f64, 0.0_f64, 0.0_f64); 3];
+            let mut ow = [1.0_f64; 3];
             let mut uvs = [(0.0_f64, 0.0_f64); 3];
             let mut ok = true;
             for (k, pt_slot) in pts.iter_mut().enumerate() {
@@ -120,7 +121,8 @@ impl Frame {
                 match view_projection.transform_point_w(v.pos) {
                     Some((x, y, z, w)) if w >= near => {
                         *pt_slot = (x / w, y / w, z / w);
-                        if let Some(uv_slot) = uvs.get_mut(k) {
+                        if let (Some(ow_slot), Some(uv_slot)) = (ow.get_mut(k), uvs.get_mut(k)) {
+                            *ow_slot = 1.0 / w;
                             *uv_slot = *uv;
                         }
                     }
@@ -133,7 +135,7 @@ impl Frame {
             if !ok {
                 continue;
             }
-            self.raster_textured(surface, painter, pts, uvs, image);
+            self.raster_textured(surface, painter, pts, ow, uvs, image);
         }
     }
 
@@ -143,6 +145,7 @@ impl Frame {
         surface: &mut paint_kit::Surface,
         painter: &mut paint_kit::Painter,
         pts: [(f64, f64, f64); 3],
+        ow: [f64; 3],
         uvs: [(f64, f64); 3],
         image: &paint_kit::Image,
     ) {
@@ -188,9 +191,18 @@ impl Frame {
                     if let Some(slot) = self.depth.get_mut(idx) {
                         *slot = z;
                     }
-                    // UVs use the same weight alignment as z.
-                    let u = uvs[0].0 * w1 + uvs[1].0 * w2 + uvs[2].0 * w0;
-                    let v = uvs[0].1 * w1 + uvs[1].1 * w2 + uvs[2].1 * w0;
+                    // Perspective-correct UVs: interpolate (u/w,
+                    // v/w) affinely, renormalize by interpolated
+                    // (1/w). Weight alignment matches z (w0=c,
+                    // w1=a, w2=b).
+                    let den = ow[0] * w1 + ow[1] * w2 + ow[2] * w0;
+                    if den.abs() < 1e-12 {
+                        continue;
+                    }
+                    let u = (uvs[0].0 * ow[0] * w1 + uvs[1].0 * ow[1] * w2 + uvs[2].0 * ow[2] * w0)
+                        / den;
+                    let v = (uvs[0].1 * ow[0] * w1 + uvs[1].1 * ow[1] * w2 + uvs[2].1 * ow[2] * w0)
+                        / den;
                     let texel = image.sample(u, v);
                     surface.blend_pixel(col, row, texel);
                 }
@@ -512,5 +524,111 @@ mod textured_tests {
             })
         };
         assert_eq!(run(), run(), "textured raster byte-identical");
+    }
+}
+
+#[cfg(test)]
+mod perspective_uv_tests {
+    use super::*;
+    use crate::math::Vec3;
+
+    /// Left half red, right half blue.
+    fn split_image() -> paint_kit::Image {
+        let w = 8_usize;
+        let h = 4_usize;
+        let mut data = vec![0_u8; w * h * 4];
+        for row in 0..h {
+            for col in 0..w {
+                let base = (row * w + col) * 4;
+                let bytes: [u8; 4] = if col < w / 2 {
+                    [255, 0, 0, 255]
+                } else {
+                    [0, 0, 255, 255]
+                };
+                if let Some(slot) = data.get_mut(base..base + 4) {
+                    slot.copy_from_slice(&bytes);
+                }
+            }
+        }
+        paint_kit::Image::new(w, h, data).unwrap_or_else(|| paint_kit::Image {
+            width: 1,
+            height: 1,
+            data: vec![0, 0, 0, 0],
+        })
+    }
+
+    /// Regression for perspective-correct UVs: a depth-tilted quad
+    /// (near edge at w=1, far edge at w=5). Affine interpolation
+    /// drifts the u=0.5 boundary ~25 px left of the true projected
+    /// midline; correct interpolation puts the texture boundary
+    /// exactly on it.
+    #[test]
+    fn uv_midline_follows_projection_not_screen_midpoint() {
+        let Some(mut surface) = paint_kit::Surface::new(64, 64) else {
+            return;
+        };
+        let mut painter = paint_kit::Painter::default();
+        let mut frame = Frame::new(64, 64);
+        let img = split_image();
+        // Tilted quad: A(-2,-1,4) u=0, B(2,-1,0) u=1, C(2,1,0) u=1,
+        // D(-2,1,4) u=0. The u=0.5 iso-line is x=0, z=2, whose
+        // projection lands at NDC x=0 (screen column 32).
+        let quad = [
+            TexturedTriangle {
+                verts: [
+                    Vertex {
+                        pos: Vec3::new(-2.0, -1.0, 4.0),
+                    },
+                    Vertex {
+                        pos: Vec3::new(2.0, -1.0, 0.0),
+                    },
+                    Vertex {
+                        pos: Vec3::new(2.0, 1.0, 0.0),
+                    },
+                ],
+                uvs: [(0.0, 1.0), (1.0, 1.0), (1.0, 0.0)],
+            },
+            TexturedTriangle {
+                verts: [
+                    Vertex {
+                        pos: Vec3::new(-2.0, -1.0, 4.0),
+                    },
+                    Vertex {
+                        pos: Vec3::new(2.0, 1.0, 0.0),
+                    },
+                    Vertex {
+                        pos: Vec3::new(-2.0, 1.0, 4.0),
+                    },
+                ],
+                uvs: [(0.0, 1.0), (1.0, 0.0), (0.0, 0.0)],
+            },
+        ];
+        let proj = Mat4::perspective(std::f64::consts::FRAC_PI_2, 1.0, 0.1, 100.0);
+        let view = Mat4::look_at(
+            Vec3::new(0.0, 0.0, 5.0),
+            Vec3::ZERO,
+            Vec3::new(0.0, 1.0, 0.0),
+        );
+        let vp = proj.mul(&view);
+        // The projected midline column: transform (0,0,2).
+        let (mx, _, _) = vp
+            .transform_point(Vec3::new(0.0, 0.0, 2.0))
+            .unwrap_or((1.0, 1.0, 1.0));
+        let mid_col = ((mx + 1.0) * 0.5 * 64.0) as usize;
+        frame.draw_textured(&mut surface, &mut painter, &vp, &quad, &img, 0.1);
+        let row = 32_usize;
+        let red_at =
+            |col: usize| -> Option<u8> { surface.data().get((row * 64 + col) * 4).copied() };
+        let blue_at =
+            |col: usize| -> Option<u8> { surface.data().get((row * 64 + col) * 4 + 2).copied() };
+        // Just left of the midline: red; just right: blue.
+        let left = red_at(mid_col.saturating_sub(2));
+        let right = blue_at(mid_col + 2);
+        assert_eq!(left, Some(255), "left of midline samples u<0.5 (red)");
+        assert_eq!(right, Some(255), "right of midline samples u>0.5 (blue)");
+        // And the boundary itself is within 2 px of the projected
+        // midline (affine drifts it ~25 px in this configuration).
+        let left_blue = blue_at(mid_col.saturating_sub(2));
+        assert_eq!(left_blue, Some(0), "no blue bleed left of midline");
     }
 }
