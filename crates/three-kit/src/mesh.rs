@@ -100,6 +100,23 @@ pub enum Light {
         /// Distance over which the light falls to zero.
         range: f64,
     },
+    /// Positional cone light: emits toward `direction` within
+    /// `angle_deg` (full-intensity core out to `inner_deg`, smooth
+    /// falloff to the cutoff), with linear range falloff.
+    Spot {
+        /// World-space light position.
+        position: Vec3,
+        /// Cone axis, pointing from the light toward the scene.
+        direction: Vec3,
+        /// Ambient term in `[0, 1]`.
+        ambient: f64,
+        /// Distance over which the light falls to zero.
+        range: f64,
+        /// Full-intensity half-angle in degrees.
+        inner_deg: f64,
+        /// Cutoff half-angle in degrees (must be >= inner).
+        outer_deg: f64,
+    },
 }
 
 impl Light {
@@ -129,6 +146,43 @@ impl Light {
                     0.0
                 };
                 (n.dot(dir).max(0.0) * atten, ambient)
+            }
+            Light::Spot {
+                position,
+                direction,
+                ambient,
+                range,
+                inner_deg,
+                outer_deg,
+            } => {
+                let to_light = position.sub(at);
+                let dist = to_light.len();
+                let Some(dir) = to_light.normalize() else {
+                    return base;
+                };
+                let Some(cone) = direction.normalize() else {
+                    return base;
+                };
+                // Range attenuation (as Point).
+                let atten = if range > 1e-9 {
+                    (1.0 - dist / range).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+                // Cone factor: 1 inside the inner angle, smooth to 0
+                // at the cutoff. The cone axis points from the light
+                // toward the scene; `dir` points from the surface
+                // back to the light, so negate for the comparison
+                // (larger cosine = closer to the axis).
+                let cos_axis = dir.scale(-1.0).dot(cone);
+                let cos_inner = inner_deg.to_radians().cos();
+                let cos_outer = outer_deg.to_radians().cos();
+                let cone_f = if cos_outer > cos_inner {
+                    ((cos_axis - cos_outer) / (cos_inner - cos_outer)).clamp(0.0, 1.0)
+                } else {
+                    f64::from(cos_axis >= cos_outer)
+                };
+                (n.dot(dir).max(0.0) * atten * cone_f, ambient)
             }
         };
         let k = (ambient + (1.0 - ambient) * lambert).clamp(0.0, 1.0);
@@ -378,5 +432,50 @@ mod tests {
         );
         assert!(toward[0] > away[0], "face toward the light is brighter");
         assert_eq!(away[0], 0, "facing away: zero (ambient 0)");
+    }
+
+    #[test]
+    fn spot_light_cone_shaping() {
+        let light = Light::Spot {
+            position: Vec3::new(0.0, 0.0, 4.0),
+            direction: Vec3::new(0.0, 0.0, -1.0),
+            ambient: 0.1,
+            range: 10.0,
+            inner_deg: 20.0,
+            outer_deg: 40.0,
+        };
+        // On-axis face: lit.
+        let on = light.shade_at(
+            Vec3::new(0.0, 0.0, 1.0),
+            Vec3::new(0.0, 0.0, 2.0),
+            [100, 100, 100, 255],
+        );
+        assert!(on[0] > 50, "on-axis lit: {}", on[0]);
+        // 60 degrees off-axis: outside the 40-degree cutoff.
+        let off = light.shade_at(
+            Vec3::new(1.0, 0.0, 0.0),
+            Vec3::new(2.0, 0.0, 2.0),
+            [100, 100, 100, 255],
+        );
+        assert_eq!(off[0], 10, "outside cone: ambient only");
+    }
+
+    #[test]
+    fn spot_light_range_still_applies() {
+        let light = Light::Spot {
+            position: Vec3::new(0.0, 0.0, 0.0),
+            direction: Vec3::new(0.0, 0.0, -1.0),
+            ambient: 0.1,
+            range: 2.0,
+            inner_deg: 30.0,
+            outer_deg: 45.0,
+        };
+        // On-axis but beyond the 2-unit range.
+        let far = light.shade_at(
+            Vec3::new(0.0, 0.0, 1.0),
+            Vec3::new(0.0, 0.0, 3.0),
+            [100, 100, 100, 255],
+        );
+        assert_eq!(far[0], 10, "on-axis but beyond range: ambient only");
     }
 }
