@@ -9,8 +9,10 @@ pub mod math;
 pub mod mesh;
 pub mod obj;
 pub mod raster;
+pub mod skin;
 
 pub use math::{Mat4, Vec3};
 pub use mesh::{Light, Mesh};
 pub use obj::{ObjMesh, import_obj};
 pub use raster::{Frame, TexturedTriangle, Triangle, Vertex};
+pub use skin::{Channel, Joint, Skin};

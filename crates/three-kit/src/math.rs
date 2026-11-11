@@ -63,6 +63,12 @@ impl Vec3 {
         )
     }
 
+    /// Euclidean distance to `other`.
+    #[must_use]
+    pub fn distance(self, other: Vec3) -> f64 {
+        self.sub(other).len()
+    }
+
     /// Squared length.
     #[must_use]
     pub const fn len2(self) -> f64 {
@@ -221,6 +227,86 @@ impl Mat4 {
         r
     }
 
+    /// Invert the matrix (Gauss-Jordan with partial pivoting).
+    /// Returns `None` for singular matrices.
+    #[must_use]
+    pub fn inverse(&self) -> Option<Mat4> {
+        // Augmented [self | identity].
+        let mut a = self.m;
+        let mut inv = Mat4::identity().m;
+        for col in 0..4 {
+            // Pivot: largest |value| in this column at/below the diagonal.
+            let mut pivot = col;
+            let mut best = a.get(col * 4 + col).copied().unwrap_or(0.0).abs();
+            for r in (col + 1)..4 {
+                let v = a.get(col * 4 + r).copied().unwrap_or(0.0).abs();
+                if v > best {
+                    best = v;
+                    pivot = r;
+                }
+            }
+            if best < 1e-12 {
+                return None;
+            }
+            // Swap pivot row into place.
+            if pivot != col {
+                for k in 0..4 {
+                    let (t1, t2) = (
+                        a.get(col * 4 + k).copied().unwrap_or(0.0),
+                        a.get(pivot * 4 + k).copied().unwrap_or(0.0),
+                    );
+                    if let Some(slot) = a.get_mut(col * 4 + k) {
+                        *slot = t2;
+                    }
+                    if let Some(slot) = a.get_mut(pivot * 4 + k) {
+                        *slot = t1;
+                    }
+                    let (t1, t2) = (
+                        inv.get(col * 4 + k).copied().unwrap_or(0.0),
+                        inv.get(pivot * 4 + k).copied().unwrap_or(0.0),
+                    );
+                    if let Some(slot) = inv.get_mut(col * 4 + k) {
+                        *slot = t2;
+                    }
+                    if let Some(slot) = inv.get_mut(pivot * 4 + k) {
+                        *slot = t1;
+                    }
+                }
+            }
+            // Normalize the pivot row.
+            let d = a.get(col * 4 + col).copied().unwrap_or(1.0);
+            for k in 0..4 {
+                if let Some(slot) = a.get_mut(col * 4 + k) {
+                    *slot /= d;
+                }
+                if let Some(slot) = inv.get_mut(col * 4 + k) {
+                    *slot /= d;
+                }
+            }
+            // Eliminate the column from all other rows.
+            for r in 0..4 {
+                if r == col {
+                    continue;
+                }
+                let factor = a.get(r * 4 + col).copied().unwrap_or(0.0);
+                if factor.abs() < 1e-15 {
+                    continue;
+                }
+                for k in 0..4 {
+                    let av = a.get(col * 4 + k).copied().unwrap_or(0.0);
+                    let iv = inv.get(col * 4 + k).copied().unwrap_or(0.0);
+                    if let Some(slot) = a.get_mut(r * 4 + k) {
+                        *slot -= factor * av;
+                    }
+                    if let Some(slot) = inv.get_mut(r * 4 + k) {
+                        *slot -= factor * iv;
+                    }
+                }
+            }
+        }
+        Some(Mat4 { m: inv })
+    }
+
     /// Transform a point (w-divide applied). Returns `None` when
     /// the point lands on the w=0 plane.
     #[must_use]
@@ -292,6 +378,37 @@ mod tests {
             .transform_point(Vec3::new(1.0, 0.0, 0.0))
             .unwrap_or((0.0, 0.0, 0.0));
         assert!(x.abs() < 1e-9 && (y - 1.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn inverse_undoes_transforms() {
+        for m in [
+            Mat4::translate(Vec3::new(3.0, -4.0, 5.0)),
+            Mat4::rotate_z(0.7),
+            Mat4::rotate_x(-1.2).mul(&Mat4::translate(Vec3::new(1.0, 2.0, 3.0))),
+            Mat4::scale(2.0),
+        ] {
+            let inv = m.inverse().unwrap_or(Mat4::identity());
+            let prod = m.mul(&inv);
+            // Diagonal ~1, off-diagonal ~0.
+            for col in 0..4 {
+                for row in 0..4 {
+                    let v = prod.m.get(col * 4 + row).copied().unwrap_or(1.0);
+                    let expected = if col == row { 1.0 } else { 0.0 };
+                    assert!(
+                        (v - expected).abs() < 1e-9,
+                        "inverse product at ({col},{row}): {v}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn inverse_singular_is_none() {
+        // Rank-deficient: all-zero translation column duplicated.
+        let singular = Mat4 { m: [0.0; 16] };
+        assert!(singular.inverse().is_none());
     }
 
     #[test]
