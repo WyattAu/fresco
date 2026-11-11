@@ -242,4 +242,15 @@ mod tests {
         });
         assert!(ok, "only the blue source half was drawn");
     }
+
+    #[test]
+    fn image_sample_edge_uv_returns_last_texel() {
+        // REGRESSION: u=1.0 clamped to index `width` (out of bounds)
+        // returned transparent black instead of the last texel.
+        let img = solid_image(4, 4, [30, 60, 90, 255]);
+        let edge = img.sample(1.0, 1.0);
+        assert_eq!(edge, [30, 60, 90, 255], "corner sample is the last texel");
+        let mid = img.sample(0.5, 0.5);
+        assert_eq!(mid, [30, 60, 90, 255], "uniform image: any texel matches");
+    }
 }

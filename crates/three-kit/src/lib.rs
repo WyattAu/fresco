@@ -13,4 +13,4 @@ pub mod raster;
 pub use math::{Mat4, Vec3};
 pub use mesh::{Light, Mesh};
 pub use obj::{ObjMesh, import_obj};
-pub use raster::{Frame, Triangle, Vertex};
+pub use raster::{Frame, TexturedTriangle, Triangle, Vertex};

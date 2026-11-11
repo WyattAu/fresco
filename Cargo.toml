@@ -18,24 +18,24 @@ members = [
 ]
 
 [workspace.package]
-version = "0.7.14"
+version = "0.7.15"
 edition = "2024"
 rust-version = "1.92"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/WyattAu/fresco"
 
 [workspace.dependencies]
-path-kit = { path = "crates/path-kit", version = "0.7.14" }
-phys-kit = { path = "crates/phys-kit", version = "0.7.14" }
-ecs-kit = { path = "crates/ecs-kit", version = "0.7.14" }
-anim-kit = { path = "crates/anim-kit", version = "0.7.14" }
-scene-kit = { path = "crates/scene-kit", version = "0.7.14" }
-layout-kit = { path = "crates/layout-kit", version = "0.7.14" }
-paint-kit = { path = "crates/paint-kit", version = "0.7.14" }
-text-kit = { path = "crates/text-kit", version = "0.7.14" }
-widget-kit = { path = "crates/widget-kit", version = "0.7.14" }
-window-kit = { path = "crates/window-kit", version = "0.7.14", default-features = false }
-fx = { path = "crates/fx", version = "0.7.14" }
+path-kit = { path = "crates/path-kit", version = "0.7.15" }
+phys-kit = { path = "crates/phys-kit", version = "0.7.15" }
+ecs-kit = { path = "crates/ecs-kit", version = "0.7.15" }
+anim-kit = { path = "crates/anim-kit", version = "0.7.15" }
+scene-kit = { path = "crates/scene-kit", version = "0.7.15" }
+layout-kit = { path = "crates/layout-kit", version = "0.7.15" }
+paint-kit = { path = "crates/paint-kit", version = "0.7.15" }
+text-kit = { path = "crates/text-kit", version = "0.7.15" }
+widget-kit = { path = "crates/widget-kit", version = "0.7.15" }
+window-kit = { path = "crates/window-kit", version = "0.7.15", default-features = false }
+fx = { path = "crates/fx", version = "0.7.15" }
 criterion = "0.7"
 
 [profile.release]

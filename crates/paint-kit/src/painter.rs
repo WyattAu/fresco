@@ -71,10 +71,12 @@ impl Image {
 
     /// Sample with nearest-neighbor scaling into a unit rect position.
     pub fn sample(&self, u: f64, v: f64) -> [u8; 4] {
-        let x = (u.clamp(0.0, 1.0) * f64::from(u32::try_from(self.width).unwrap_or(1))).floor()
-            as usize;
-        let y = (v.clamp(0.0, 1.0) * f64::from(u32::try_from(self.height).unwrap_or(1))).floor()
-            as usize;
+        let x = ((u.clamp(0.0, 1.0) * f64::from(u32::try_from(self.width).unwrap_or(1))).floor()
+            as usize)
+            .min(self.width.saturating_sub(1));
+        let y = ((v.clamp(0.0, 1.0) * f64::from(u32::try_from(self.height).unwrap_or(1))).floor()
+            as usize)
+            .min(self.height.saturating_sub(1));
         let base = y
             .saturating_mul(self.width)
             .saturating_add(x)
