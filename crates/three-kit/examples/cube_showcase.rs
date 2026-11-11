@@ -57,7 +57,7 @@ fn main() {
     let eye = Vec3::new(3.0, 2.5, 4.0);
     let view = Mat4::look_at(eye, Vec3::ZERO, Vec3::new(0.0, 1.0, 0.0));
     let vp = proj.mul(&view);
-    let light = Light {
+    let light = Light::Directional {
         direction: Vec3::new(0.45, 0.8, 0.35)
             .normalize()
             .unwrap_or(Vec3::new(0.0, 1.0, 0.0)),
