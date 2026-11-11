@@ -5,6 +5,7 @@
 //! paint-kit surfaces. Foundation increment: meshes, lighting, and
 //! texture mapping build on this.
 
+pub mod animation;
 pub mod math;
 pub mod mesh;
 pub mod obj;
