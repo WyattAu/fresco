@@ -32,9 +32,10 @@ pub struct Skin {
     /// Joint hierarchy (index order is parent-before-child is NOT
     /// required; evaluation recurses through parents).
     pub joints: Vec<Joint>,
-    /// One binding per mesh vertex: (joint index, weight) with
-    /// weight normalized to 1.
-    pub bindings: Vec<(usize, f64)>,
+    /// Weighted joint bindings per mesh vertex (rigid binding =
+    /// one entry of weight 1; smooth = several entries with
+    /// weights summing to 1).
+    pub bindings: Vec<Vec<(usize, f64)>>,
     /// Bind-pose world matrices (captured at construction).
     pub bind_worlds: Vec<Mat4>,
 }
@@ -74,7 +75,7 @@ impl Skin {
                         best = i;
                     }
                 }
-                (best, 1.0)
+                vec![(best, 1.0)]
             })
             .collect();
         Skin {
@@ -99,9 +100,9 @@ impl Skin {
             .collect()
     }
 
-    /// Pose the bound mesh: every vertex transformed by
-    /// `pose_world * inverse(bind_world)` for its joint. Bind pose
-    /// (poses = joint locals) reproduces the input exactly.
+    /// Pose the skinned mesh: every vertex is the weighted sum of
+    /// `pose_world * inverse(bind_world)` over its bindings. Bind
+    /// pose (poses = joint locals) reproduces the input exactly.
     #[must_use]
     pub fn posed_mesh(&self, base: &Mesh, poses: &[Mat4]) -> Mesh {
         let worlds = self.joint_worlds(poses);
@@ -109,25 +110,77 @@ impl Skin {
             .verts
             .iter()
             .zip(self.bindings.iter())
-            .map(|(v, (joint, weight))| {
-                let pose_w = world_of(&worlds, *joint);
-                let bind_inv = self
-                    .bind_worlds
-                    .get(*joint)
-                    .and_then(Mat4::inverse)
-                    .unwrap_or_else(Mat4::identity);
-                let final_w = pose_w.mul(&bind_inv);
-                let (x, y, z) = final_w.transform_point(*v).unwrap_or((v.x, v.y, v.z));
-                Vec3::new(
-                    v.x * (1.0 - weight) + x * weight,
-                    v.y * (1.0 - weight) + y * weight,
-                    v.z * (1.0 - weight) + z * weight,
-                )
+            .map(|(v, binds)| {
+                let mut acc = Vec3::ZERO;
+                for (joint, weight) in binds {
+                    let pose_w = world_of(&worlds, *joint);
+                    let bind_inv = self
+                        .bind_worlds
+                        .get(*joint)
+                        .and_then(Mat4::inverse)
+                        .unwrap_or_else(Mat4::identity);
+                    let final_w = pose_w.mul(&bind_inv);
+                    let (x, y, z) = final_w.transform_point(*v).unwrap_or((v.x, v.y, v.z));
+                    acc = Vec3::new(acc.x + x * weight, acc.y + y * weight, acc.z + z * weight);
+                }
+                acc
             })
             .collect();
         Mesh {
             verts,
             faces: base.faces.clone(),
+        }
+    }
+
+    /// Smooth auto-rig: bind every vertex to its `k` nearest
+    /// joints with inverse-distance weights, normalized to sum 1.
+    #[must_use]
+    pub fn bind_smooth(mesh: &Mesh, joints: &[Joint], k: usize) -> Self {
+        let joint_origins: Vec<Vec3> = joints
+            .iter()
+            .map(|j| {
+                let (x, y, z) = j
+                    .local
+                    .transform_point(Vec3::ZERO)
+                    .unwrap_or((0.0, 0.0, 0.0));
+                Vec3::new(x, y, z)
+            })
+            .collect();
+        let k = k.max(1);
+        let bindings = mesh
+            .verts
+            .iter()
+            .map(|v| {
+                // Distance-sorted (joint, distance) pairs.
+                let mut ranked: Vec<(usize, f64)> = joint_origins
+                    .iter()
+                    .enumerate()
+                    .map(|(i, o)| (i, v.distance(*o)))
+                    .collect();
+                ranked.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+                // Take the k nearest; weight by 1/(dist), normalized.
+                let taken: Vec<(usize, f64)> = ranked
+                    .iter()
+                    .take(k)
+                    .map(|(i, d)| (*i, 1.0 / (d.max(1e-3))))
+                    .collect();
+                let sum: f64 = taken.iter().map(|(_, w)| *w).sum();
+                taken
+                    .into_iter()
+                    .map(|(i, w)| (i, w / sum.max(1e-12)))
+                    .collect()
+            })
+            .collect();
+        let stub = Skin {
+            joints: joints.to_vec(),
+            bindings: Vec::new(),
+            bind_worlds: Vec::new(),
+        };
+        let bind_worlds = stub.joint_worlds(&[]);
+        Skin {
+            joints: joints.to_vec(),
+            bindings,
+            bind_worlds,
         }
     }
 }
@@ -253,7 +306,11 @@ mod tests {
             ],
             faces: vec![[0, 1, 2]],
         };
-        let bindings = vec![(0_usize, 1.0), (1_usize, 1.0), (1_usize, 1.0)];
+        let bindings = vec![
+            vec![(0_usize, 1.0)],
+            vec![(1_usize, 1.0)],
+            vec![(1_usize, 1.0)],
+        ];
         let stub = Skin {
             joints: skin_joints(),
             bindings: Vec::new(),
@@ -372,7 +429,91 @@ mod tests {
             faces: vec![[0, 1, 0]],
         };
         let skin = Skin::bind_nearest(&mesh, &joints);
-        assert_eq!(skin.bindings.first().copied(), Some((0_usize, 1.0)));
-        assert_eq!(skin.bindings.get(1).copied(), Some((1_usize, 1.0)));
+        assert_eq!(
+            skin.bindings.first().and_then(|b| b.first().copied()),
+            Some((0_usize, 1.0))
+        );
+        assert_eq!(
+            skin.bindings.get(1).and_then(|b| b.first().copied()),
+            Some((1_usize, 1.0))
+        );
+    }
+
+    #[test]
+    fn smooth_binding_blends_joint_motion() {
+        // A vertex bound 50/50 between root and child: when the
+        // child swings 90 degrees (its part of the arm going to
+        // (2,1,0)), the blended vertex lands halfway.
+        let (skin, mesh) = arm();
+        let mut bindings = skin.bindings.clone();
+        if let Some(slot) = bindings.get_mut(2) {
+            *slot = vec![(0_usize, 0.5), (1_usize, 0.5)];
+        }
+        let blended = Skin {
+            joints: skin.joints.clone(),
+            bindings,
+            bind_worlds: skin.bind_worlds.clone(),
+        };
+        let poses = vec![
+            Mat4::identity(),
+            Mat4::translate(Vec3::new(2.0, 0.0, 0.0))
+                .mul(&Mat4::rotate_z(std::f64::consts::FRAC_PI_2)),
+        ];
+        let posed = blended.posed_mesh(&mesh, &poses);
+        let v = posed.verts.get(2).copied().unwrap_or(Vec3::ZERO);
+        // Rigid-child result is (2,1,0); rigid-root keeps (3,0,0).
+        // 50/50 blend: (2.5, 0.5, 0).
+        assert!(
+            (v.x - 2.5).abs() < 1e-9 && (v.y - 0.5).abs() < 1e-9,
+            "50/50 blend: {v:?}"
+        );
+    }
+
+    #[test]
+    fn bind_smooth_normalizes_weights() {
+        let joints = vec![
+            Joint {
+                parent: None,
+                local: Mat4::identity(),
+            },
+            Joint {
+                parent: Some(0),
+                local: Mat4::translate(Vec3::new(10.0, 0.0, 0.0)),
+            },
+        ];
+        let mesh = Mesh {
+            verts: vec![Vec3::new(5.0, 0.0, 0.0)],
+            faces: vec![[0, 0, 0]],
+        };
+        let skin = Skin::bind_smooth(&mesh, &joints, 2);
+        let binds = skin.bindings.first().cloned().unwrap_or_default();
+        assert_eq!(binds.len(), 2, "two joints bound");
+        let sum: f64 = binds.iter().map(|(_, w)| *w).sum();
+        assert!((sum - 1.0).abs() < 1e-9, "weights normalized: {sum}");
+    }
+
+    #[test]
+    fn smooth_bind_pose_is_identity() {
+        let joints = vec![
+            Joint {
+                parent: None,
+                local: Mat4::identity(),
+            },
+            Joint {
+                parent: Some(0),
+                local: Mat4::translate(Vec3::new(10.0, 0.0, 0.0)),
+            },
+        ];
+        let mesh = Mesh {
+            verts: vec![Vec3::new(5.0, 2.0, -1.0)],
+            faces: vec![[0, 0, 0]],
+        };
+        let skin = Skin::bind_smooth(&mesh, &joints, 2);
+        let posed = skin.posed_mesh(&mesh, &[]);
+        assert_eq!(
+            posed.verts.first().copied(),
+            mesh.verts.first().copied(),
+            "smooth bind pose reproduces input"
+        );
     }
 }
