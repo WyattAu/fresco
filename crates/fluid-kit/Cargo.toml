@@ -1,0 +1,29 @@
+[package]
+name = "fluid-kit"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "3D Eulerian fluid simulation for the fresco game-engine stack: stable-fluids solver with semi-Lagrangian advection and Jacobi pressure projection, deterministic and headless-testable"
+keywords = ["fluid", "simulation", "solver", "graphics"]
+categories = ["graphics", "mathematics", "simulation"]
+exclude = ["/target"]
+
+[dependencies]
+three-kit = { workspace = true }
+
+[lints.rust]
+missing_docs = "deny"
+unsafe_code = "forbid"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+
+[dev-dependencies]
+path-kit = { workspace = true }
+paint-kit = { workspace = true }
+render-conformance = { path = "../render-conformance" }
