@@ -19,6 +19,8 @@ pub struct FluidSolver {
     pub velocity: VelocityField,
     /// Smoke density field (advected, drives buoyancy).
     pub density: Field,
+    /// Solid-cell mask (obstacles): flow stops here.
+    pub solid: Vec<bool>,
     /// Buoyancy: upward (Y) acceleration per unit density.
     pub buoyancy: f64,
     /// Jacobi iterations for the pressure solve per step.
@@ -29,13 +31,39 @@ impl FluidSolver {
     /// New solver over `dims` with all fields zeroed.
     #[must_use]
     pub fn new(dims: (usize, usize, usize)) -> Self {
+        let len = dims.0.saturating_mul(dims.1).saturating_mul(dims.2);
         FluidSolver {
             velocity: VelocityField::zero(dims),
             density: Field::zero(dims),
+            solid: vec![false; len],
             dims,
             buoyancy: 2.0,
             pressure_iters: 20,
         }
+    }
+
+    /// Mark a cell solid (obstacle). Solid cells carry no velocity
+    /// or density, and act as pressure walls.
+    pub fn set_solid(&mut self, x: usize, y: usize, z: usize, solid: bool) {
+        let (nx, ny, nz) = self.dims;
+        let x = x.min(nx.saturating_sub(1));
+        let y = y.min(ny.saturating_sub(1));
+        let z = z.min(nz.saturating_sub(1));
+        let i = x.saturating_add(nx.saturating_mul(y.saturating_add(ny.saturating_mul(z))));
+        if let Some(slot) = self.solid.get_mut(i) {
+            *slot = solid;
+        }
+    }
+
+    /// Whether a cell is solid.
+    #[must_use]
+    pub fn is_solid(&self, x: usize, y: usize, z: usize) -> bool {
+        let (nx, ny, nz) = self.dims;
+        if x >= nx || y >= ny || z >= nz {
+            return true;
+        }
+        let i = x.saturating_add(nx.saturating_mul(y.saturating_add(ny.saturating_mul(z))));
+        self.solid.get(i).copied().unwrap_or(true)
     }
 
     /// Inject density at a cell (smoke source).
@@ -56,6 +84,18 @@ impl FluidSolver {
         self.advect_density(dt);
         self.enforce_boundaries();
         self.project();
+        // Obstacles carry nothing. `solid` is one flag per cell.
+        let (nx, ny, nz) = self.dims;
+        for z in 0..nz {
+            for y in 0..ny {
+                for x in 0..nx {
+                    if self.is_solid(x, y, z) {
+                        self.velocity.set(x, y, z, [0.0, 0.0, 0.0]);
+                        self.density.set(x, y, z, 0.0);
+                    }
+                }
+            }
+        }
     }
 
     /// Buoyancy: density pushes velocity up (+Y).
@@ -64,6 +104,9 @@ impl FluidSolver {
         for z in 0..nz {
             for y in 0..ny {
                 for x in 0..nx {
+                    if self.is_solid(x, y, z) {
+                        continue;
+                    }
                     let d = self.density.get(x, y, z);
                     if d > 0.0 {
                         self.velocity
@@ -149,6 +192,9 @@ impl FluidSolver {
             for z in 1..nz.saturating_sub(1) {
                 for y in 1..ny.saturating_sub(1) {
                     for x in 1..nx.saturating_sub(1) {
+                        if self.is_solid(x, y, z) {
+                            continue; // Dirichlet p=0: pressure wall
+                        }
                         let sum = pressure.get(x - 1, y, z)
                             + pressure.get(x + 1, y, z)
                             + pressure.get(x, y - 1, z)
@@ -165,6 +211,9 @@ impl FluidSolver {
         for z in 1..nz.saturating_sub(1) {
             for y in 1..ny.saturating_sub(1) {
                 for x in 1..nx.saturating_sub(1) {
+                    if self.is_solid(x, y, z) {
+                        continue;
+                    }
                     let gx = (pressure.get(x + 1, y, z) - pressure.get(x - 1, y, z)) * 0.5;
                     let gy = (pressure.get(x, y + 1, z) - pressure.get(x, y - 1, z)) * 0.5;
                     let gz = (pressure.get(x, y, z + 1) - pressure.get(x, y, z - 1)) * 0.5;
@@ -374,5 +423,85 @@ mod tests {
             m1 <= m0 + 1e-6 && m1 >= -1e-6,
             "density mass bounded (no injection, no explosion): {m0} -> {m1}"
         );
+    }
+
+    #[test]
+    fn obstacle_blocks_density() {
+        let mut s = FluidSolver::new(DIMS);
+        // A solid wall across the middle (yz-plane at x=8).
+        for y in 1..15 {
+            for z in 1..15 {
+                s.set_solid(8, y, z, true);
+            }
+        }
+        // Smoke below the wall with an updraft.
+        for y in 2..7 {
+            for x in 5..12 {
+                for z in 5..12 {
+                    s.add_density(x, y, z, 3.0);
+                    s.add_velocity(x, y, z, [0.0, 4.0, 0.0]);
+                }
+            }
+        }
+        for _ in 0..30 {
+            s.step(1.0 / 60.0);
+        }
+        // No smoke inside the wall.
+        let mut inside = 0.0;
+        for y in 1..15 {
+            for z in 1..15 {
+                inside += s.density.get(8, y, z);
+            }
+        }
+        assert!(inside.abs() < 1e-6, "obstacle interior empty: {inside}");
+        // Smoke accumulated below the wall (pressure wall pushed it
+        // back down).
+        let mut below = 0.0;
+        for y in 1..7 {
+            for x in 4..13 {
+                for z in 4..13 {
+                    below += s.density.get(x, y, z);
+                }
+            }
+        }
+        assert!(below > 10.0, "smoke pools under the wall: {below}");
+    }
+
+    #[test]
+    fn obstacle_cells_carry_nothing() {
+        let mut s = FluidSolver::new(DIMS);
+        s.set_solid(8, 8, 8, true);
+        s.add_density(8, 8, 8, 50.0);
+        s.add_velocity(8, 8, 8, [9.0, 9.0, 9.0]);
+        s.step(1.0 / 60.0);
+        assert_eq!(s.density.get(8, 8, 8), 0.0, "density stripped");
+        assert_eq!(s.velocity.get(8, 8, 8), [0.0, 0.0, 0.0], "velocity zeroed");
+    }
+
+    #[test]
+    fn obstacle_flow_is_deterministic() {
+        let run = || {
+            let mut s = FluidSolver::new(DIMS);
+            for y in 6..11 {
+                for z in 6..11 {
+                    s.set_solid(8, y, z, true);
+                }
+            }
+            for _ in 0..20 {
+                for x in 4..7 {
+                    for y in 6..11 {
+                        for z in 6..11 {
+                            s.add_density(x, y, z, 1.0);
+                            s.add_velocity(x, y, z, [3.0, 1.0, 0.0]);
+                        }
+                    }
+                }
+                s.step(1.0 / 60.0);
+            }
+            s.density.data.iter().fold(0xcbf29ce484222325_u64, |h, &b| {
+                (h ^ b.to_bits()).wrapping_mul(0x100000001b3)
+            })
+        };
+        assert_eq!(run(), run(), "obstacle flow byte-identical");
     }
 }
