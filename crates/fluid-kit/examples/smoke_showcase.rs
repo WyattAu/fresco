@@ -41,10 +41,22 @@ fn ray_box(origin: Vec3, dir: Vec3, min: Vec3, max: Vec3) -> Option<(f64, f64)> 
 /// March the ray through the grid, accumulating smoke opacity and
 /// color. Returns the composited pixel color over the background.
 #[allow(clippy::too_many_lines)]
-fn raymarch(solver: &FluidSolver, origin: Vec3, dir: Vec3, steps: usize, bg: [u8; 3]) -> [u8; 3] {
+fn raymarch(
+    solver: &FluidSolver,
+    origin: Vec3,
+    dir: Vec3,
+    steps: usize,
+    bg: [u8; 3],
+    obs_min: Vec3,
+    obs_max: Vec3,
+) -> [u8; 3] {
     let Some((t0, t1)) = ray_box(origin, dir, BOX_MIN, BOX_MAX) else {
         return bg;
     };
+    // Obstacle entry distance (occludes smoke behind it).
+    let t_obs = ray_box(origin, dir, obs_min, obs_max)
+        .map(|(e, _)| e)
+        .unwrap_or(f64::INFINITY);
     let span = t1 - t0;
     let step_len = span / steps.max(1) as f64;
     let mut alpha = 0.0_f64; // accumulated opacity
@@ -52,6 +64,10 @@ fn raymarch(solver: &FluidSolver, origin: Vec3, dir: Vec3, steps: usize, bg: [u8
     let (sx, sy, sz) = solver.density.dims;
     for k in 0..steps {
         let t = t0 + step_len * (k as f64 + 0.5);
+        // Stop at the obstacle surface: smoke behind it is hidden.
+        if t >= t_obs {
+            break;
+        }
         let p = Vec3::new(
             origin.x + dir.x * t,
             origin.y + dir.y * t,
@@ -82,6 +98,38 @@ fn raymarch(solver: &FluidSolver, origin: Vec3, dir: Vec3, steps: usize, bg: [u8
     for (slot, c) in out.iter_mut().zip(smoke_color) {
         *slot = *slot * (1.0 - alpha) + c * alpha;
     }
+    // Obstacle surface (opaque, flat-shaded by its entry face).
+    if let Some((e, _)) = ray_box(origin, dir, obs_min, obs_max)
+        && e >= t0
+    {
+        let hp = Vec3::new(
+            origin.x + dir.x * e,
+            origin.y + dir.y * e,
+            origin.z + dir.z * e,
+        );
+        // Entry face normal: nearest slab boundary.
+        let eps = 1e-6;
+        let n = if (hp.x - obs_min.x).abs() < eps {
+            Vec3::new(-1.0, 0.0, 0.0)
+        } else if (hp.x - obs_max.x).abs() < eps {
+            Vec3::new(1.0, 0.0, 0.0)
+        } else if (hp.y - obs_min.y).abs() < eps {
+            Vec3::new(0.0, -1.0, 0.0)
+        } else if (hp.y - obs_max.y).abs() < eps {
+            Vec3::new(0.0, 1.0, 0.0)
+        } else if (hp.z - obs_min.z).abs() < eps {
+            Vec3::new(0.0, 0.0, -1.0)
+        } else {
+            Vec3::new(0.0, 0.0, 1.0)
+        };
+        // Lambert against the showcase light.
+        let l = Vec3::new(0.45, 0.8, 0.35).normalize().unwrap_or(n);
+        let k = 0.35 + 0.65 * n.dot(l).max(0.0);
+        let obs = [110.0 * k, 100.0 * k, 90.0 * k];
+        for (slot, c) in out.iter_mut().zip(obs) {
+            *slot = c * (1.0 - alpha) + *slot * alpha;
+        }
+    }
     [out[0] as u8, out[1] as u8, out[2] as u8]
 }
 
@@ -95,6 +143,30 @@ fn main() {
     let mut solver = FluidSolver::new((24, 24, 24));
     solver.pressure_iters = 24;
     solver.buoyancy = 9.0;
+    // Floating obstacle slab offset from the emitter: smoke rises,
+    // hits it, diverts around the sides.
+    for x in 10..=14 {
+        for y in 12..=16 {
+            for z in 10..=14 {
+                solver.set_solid(x, y, z, true);
+            }
+        }
+    }
+    // Obstacle AABB in world space (for ray-box compositing).
+    let cell = || {
+        let span = BOX_MAX.sub(BOX_MIN);
+        span.scale(1.0 / 24.0)
+    };
+    let obs_min = Vec3::new(
+        BOX_MIN.x + cell().x * 10.0,
+        BOX_MIN.y + cell().y * 12.0,
+        BOX_MIN.z + cell().z * 10.0,
+    );
+    let obs_max = Vec3::new(
+        BOX_MIN.x + cell().x * 15.0,
+        BOX_MIN.y + cell().y * 17.0,
+        BOX_MIN.z + cell().z * 15.0,
+    );
 
     // Camera orbits slightly per frame. Twelve simulated steps per
     // rendered frame let the plume develop (0.4 s per frame).
@@ -143,7 +215,7 @@ fn main() {
                     .add(up.scale(ndc_y * 0.6))
                     .normalize()
                     .unwrap_or(fwd);
-                let px = raymarch(&solver, eye, dir, 48, [40, 42, 52]);
+                let px = raymarch(&solver, eye, dir, 48, [40, 42, 52], obs_min, obs_max);
                 let base = (row * width + col) * 4;
                 let data = surface.data_mut();
                 if let Some(slot) = data.get_mut(base..base + 4) {
