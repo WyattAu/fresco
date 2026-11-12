@@ -96,7 +96,7 @@ checksum = "4b46cbb362ab8752921c97e041f5e366ee6297bd428a31275b9fcf1e380f7299"
 
 [[package]]
 name = "anim-kit"
-version = "0.7.21"
+version = "0.7.22"
 
 [[package]]
 name = "anstyle"
@@ -557,7 +557,7 @@ checksum = "edf234dd1594d6dd434a8fb8cada51ddbbc593e40e4a01556a0b31c62da2775b"
 
 [[package]]
 name = "ecs-kit"
-version = "0.7.21"
+version = "0.7.22"
 
 [[package]]
 name = "either"
@@ -686,7 +686,7 @@ checksum = "aa9a19cbb55df58761df49b23516a86d432839add4af60fc256da840f66ed35b"
 
 [[package]]
 name = "fresco-charts"
-version = "0.7.21"
+version = "0.7.22"
 dependencies = [
  "fx",
  "paint-kit",
@@ -721,7 +721,7 @@ dependencies = [
 
 [[package]]
 name = "fx"
-version = "0.7.21"
+version = "0.7.22"
 dependencies = [
  "anim-kit",
  "paint-kit",
@@ -1089,7 +1089,7 @@ dependencies = [
 
 [[package]]
 name = "layout-kit"
-version = "0.7.21"
+version = "0.7.22"
 dependencies = [
  "taffy",
 ]
@@ -1563,7 +1563,7 @@ dependencies = [
 
 [[package]]
 name = "paint-kit"
-version = "0.7.21"
+version = "0.7.22"
 dependencies = [
  "path-kit",
  "scene-kit",
@@ -1629,7 +1629,7 @@ dependencies = [
 
 [[package]]
 name = "path-kit"
-version = "0.7.21"
+version = "0.7.22"
 dependencies = [
  "criterion",
 ]
@@ -1655,7 +1655,7 @@ checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
 
 [[package]]
 name = "phys-kit"
-version = "0.7.21"
+version = "0.7.22"
 dependencies = [
  "paint-kit",
  "path-kit",
@@ -1926,7 +1926,7 @@ checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
 name = "render-conformance"
-version = "0.7.21"
+version = "0.7.22"
 dependencies = [
  "paint-kit",
  "path-kit",
@@ -1984,7 +1984,7 @@ dependencies = [
 
 [[package]]
 name = "scene-kit"
-version = "0.7.21"
+version = "0.7.22"
 dependencies = [
  "path-kit",
 ]
@@ -2241,7 +2241,7 @@ dependencies = [
 
 [[package]]
 name = "text-kit"
-version = "0.7.21"
+version = "0.7.22"
 dependencies = [
  "parley",
 ]
@@ -2300,7 +2300,7 @@ dependencies = [
 
 [[package]]
 name = "three-kit"
-version = "0.7.21"
+version = "0.7.22"
 dependencies = [
  "paint-kit",
  "path-kit",
@@ -2709,7 +2709,7 @@ dependencies = [
 
 [[package]]
 name = "widget-kit"
-version = "0.7.21"
+version = "0.7.22"
 dependencies = [
  "a11y-kit",
  "accesskit",
@@ -2735,7 +2735,7 @@ dependencies = [
 
 [[package]]
 name = "window-kit"
-version = "0.7.21"
+version = "0.7.22"
 dependencies = [
  "fresco-charts",
  "fx",
