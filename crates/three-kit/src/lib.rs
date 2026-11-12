@@ -10,6 +10,7 @@ pub mod math;
 pub mod mesh;
 pub mod obj;
 pub mod raster;
+pub mod shadow;
 pub mod skin;
 
 pub use math::{Mat4, Vec3};
