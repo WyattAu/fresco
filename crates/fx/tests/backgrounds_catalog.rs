@@ -3,12 +3,12 @@
 //! device review.
 
 use fx::{
-    Beams, DotPattern, FlickeringGrid, GradientMesh, GridPattern, NoiseField, Particles, StarField,
-    Waves,
+    Beams, CircuitBoard, CodeRain, DotPattern, FlickeringGrid, GradientMesh, GridPattern, HexGrid,
+    NoiseField, Particles, Plasma, StarField, Waves,
 };
 use paint_kit::{Painter, Surface};
 
-/// Render background `kind` (0..9) at time `t` onto a 320x160 surface.
+/// Render background `kind` (0..12) at time `t` onto a 320x160 surface.
 fn render_one(kind: usize, t: f64) -> Surface {
     let mut surface = Surface::new(320, 160).unwrap_or_default();
     let mut painter = Painter::default();
@@ -23,6 +23,10 @@ fn render_one(kind: usize, t: f64) -> Surface {
         6 => Particles::new().draw(&mut fx, 320, 160),
         7 => NoiseField::new().draw(&mut fx, 320, 160),
         8 => Beams::new().draw(&mut fx, 320, 160),
+        9 => HexGrid::new().draw(&mut fx, 320, 160),
+        10 => CircuitBoard::new().draw(&mut fx, 320, 160),
+        11 => CodeRain::new().draw(&mut fx, 320, 160),
+        12 => Plasma::new().draw(&mut fx, 320, 160),
         _ => {}
     }
     surface
@@ -39,7 +43,7 @@ fn fnv1a(data: &[u8]) -> u64 {
 
 #[test]
 fn backgrounds_are_deterministic() {
-    for kind in 0..9_usize {
+    for kind in 0..13_usize {
         let a = render_one(kind, 1.0);
         let b = render_one(kind, 1.0);
         assert_eq!(
@@ -55,7 +59,7 @@ fn backgrounds_match_golden_hashes() {
     // Constants recorded from the first deterministic run; update via
     // GATE_FX_REBASELINE=1 --nocapture when a background intentionally
     // changes.
-    const GOLDENS: [u64; 9] = [
+    const GOLDENS: [u64; 13] = [
         0xf584_5953_5b8b_c3a5, // grid pattern
         0x832d_bc45_a0a3_2d2d, // dot pattern
         0x5c16_4427_ff6e_3071, // star field
@@ -65,17 +69,26 @@ fn backgrounds_match_golden_hashes() {
         0xb273_06cb_8a26_16ca, // particles
         0xc5f7_5b1e_4b38_078a, // noise field (softened defaults)
         0xf76a_02d5_6251_5791, // beams
+        0xad79_62af_bbd4_b560, // hex grid
+        0x968c_d626_6e7b_527a, // circuit board
+        0xcb01_ff7e_ac93_757d, // code rain
+        0xb615_8bf1_c3f9_0b65, // plasma
     ];
     for (kind, golden) in GOLDENS.iter().enumerate() {
         let surface = render_one(kind, 1.0);
         let h = fnv1a(surface.data());
-        assert_eq!(h, *golden, "background kind {kind} golden drifted");
+        if *golden == 0 {
+            // Placeholder: print the actual for rebaselining.
+            println!("background kind {kind} actual hash: {h:#018x}");
+        } else {
+            assert_eq!(h, *golden, "background kind {kind} golden drifted");
+        }
     }
 }
 
 #[test]
 fn backgrounds_artifacts_written() {
-    for kind in 0..9_usize {
+    for kind in 0..13_usize {
         let surface = render_one(kind, 1.0);
         let dir = std::path::Path::new("/tmp/opencode");
         std::fs::create_dir_all(dir).ok();

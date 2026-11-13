@@ -555,3 +555,268 @@ pub fn poly_path(points: &[Vec2]) -> path_kit::Path {
     path.close();
     path
 }
+
+/// Hexagon lattice outlines: pointy-top hexes tiling the surface,
+/// stroked as 2 px segments. CAD-style honeycomb background.
+#[derive(Clone, Copy, Debug)]
+pub struct HexGrid {
+    /// Hex circumradius in px.
+    pub size: f64,
+    /// Stroke color, straight RGBA.
+    pub color: [u8; 4],
+}
+
+impl HexGrid {
+    /// Defaults: 18 px hexes, soft gray strokes.
+    #[must_use]
+    pub fn new() -> Self {
+        HexGrid {
+            size: 18.0,
+            color: [150, 158, 170, 70],
+        }
+    }
+
+    /// Paint the hex lattice over the full surface.
+    pub fn draw(&self, fx: &mut Fx, width: usize, height: usize) {
+        let size = self.size.max(6.0);
+        let w = size * f64::sqrt(3.0); // column width
+        let vstep = size * 1.5; // row vertical step
+        let stroke = |fx: &mut Fx, x0: f64, y0: f64, x1: f64, y1: f64| {
+            // Axis-aligned or diagonal segments as small filled
+            // squares along the line (2 px strokes).
+            let steps = ((x1 - x0).abs().max((y1 - y0).abs()) / 1.5).ceil().max(1.0) as i32;
+            for k in 0..=steps {
+                let f = f64::from(k) / f64::from(steps);
+                fill_rect(
+                    fx,
+                    x0 + (x1 - x0) * f - 1.0,
+                    y0 + (y1 - y0) * f - 1.0,
+                    2.0,
+                    2.0,
+                    self.color,
+                );
+            }
+        };
+        let mut row = 0;
+        let mut cy = -size;
+        while cy < height as f64 + size {
+            let offset = if row % 2 == 0 { 0.0 } else { w * 0.5 };
+            let mut cx = -w * 0.5 - offset;
+            while cx < width as f64 + w {
+                // Six hex corners (pointy-top).
+                let mut corners = [(0.0, 0.0); 6];
+                for (k, c) in corners.iter_mut().enumerate() {
+                    let a = std::f64::consts::FRAC_PI_6 + std::f64::consts::TAU * k as f64 / 6.0;
+                    *c = (cx + size * a.cos(), cy + size * a.sin());
+                }
+                for k in 0..6 {
+                    let (Some((x0, y0)), Some((x1, y1))) =
+                        (corners.get(k).copied(), corners.get((k + 1) % 6).copied())
+                    else {
+                        continue;
+                    };
+                    stroke(fx, x0, y0, x1, y1);
+                }
+                cx += w;
+            }
+            cy += vstep;
+            row += 1;
+        }
+    }
+}
+
+impl Default for HexGrid {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Circuit-board traces: seeded orthogonal paths with right-angle
+/// turns and solder-dot endpoints. Static per seed.
+#[derive(Clone, Copy, Debug)]
+pub struct CircuitBoard {
+    /// Trace count.
+    pub traces: usize,
+    /// Per-instance seed.
+    pub seed: u64,
+    /// Trace color, straight RGBA.
+    pub color: [u8; 4],
+}
+
+impl CircuitBoard {
+    /// Defaults: 18 traces, dim green.
+    #[must_use]
+    pub fn new() -> Self {
+        CircuitBoard {
+            traces: 18,
+            seed: 0xC1BC,
+            color: [70, 180, 110, 120],
+        }
+    }
+
+    /// Paint the traces over the full surface.
+    pub fn draw(&self, fx: &mut Fx, width: usize, height: usize) {
+        let mut rand = FxRand::new(self.seed);
+        for _ in 0..self.traces {
+            let mut x = rand.next_range(0.0, width as f64);
+            let mut y = rand.next_range(0.0, height as f64);
+            let mut horizontal = rand.next_f64() > 0.5;
+            let segments = 3 + rand.next_index(3);
+            for _ in 0..segments {
+                let len = rand.next_range(20.0, 90.0);
+                let dir = if rand.next_f64() > 0.5 { 1.0 } else { -1.0 };
+                let (nx, ny) = if horizontal {
+                    (x + len * dir, y)
+                } else {
+                    (x, y + len * dir)
+                };
+                // Trace as a 2 px stroke.
+                let steps = ((nx - x).abs().max((ny - y).abs()) / 2.0).ceil().max(1.0) as i32;
+                for k in 0..=steps {
+                    let f = f64::from(k) / f64::from(steps);
+                    fill_rect(
+                        fx,
+                        x + (nx - x) * f - 1.0,
+                        y + (ny - y) * f - 1.0,
+                        2.0,
+                        2.0,
+                        self.color,
+                    );
+                }
+                x = nx.clamp(0.0, width as f64);
+                y = ny.clamp(0.0, height as f64);
+                horizontal = !horizontal;
+            }
+            // Solder dot at the path end.
+            fill_rect(fx, x - 3.0, y - 3.0, 6.0, 6.0, self.color);
+        }
+    }
+}
+
+impl Default for CircuitBoard {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Falling code-rain columns: bright heads with fading trails
+/// cascading down, advancing over time. Animated.
+#[derive(Clone, Copy, Debug)]
+pub struct CodeRain {
+    /// Column spacing in px.
+    pub cell: f64,
+    /// Fall speed in px/s.
+    pub speed: f64,
+    /// Head color, straight RGBA.
+    pub color: [u8; 4],
+}
+
+impl CodeRain {
+    /// Defaults: 28 px columns, 140 px/s, bright green.
+    #[must_use]
+    pub fn new() -> Self {
+        CodeRain {
+            cell: 28.0,
+            speed: 140.0,
+            color: [120, 240, 150, 230],
+        }
+    }
+
+    /// Paint the rain over the full surface.
+    pub fn draw(&self, fx: &mut Fx, width: usize, height: usize) {
+        let cell = self.cell.max(8.0);
+        let h = height as f64;
+        let mut col = 0;
+        let mut x = cell * 0.5;
+        while x < width as f64 {
+            // Per-column phase from a stable hash: desynchronizes columns.
+            let phase = (cell_hash(7, x as u64, col as u64) % 1000) as f64 / 1000.0 * h;
+            let head = (fx.t * self.speed + phase) % (h + 120.0);
+            // Trail: 4 segments fading behind the head.
+            for k in 0..4 {
+                let seg_y = head - f64::from(k) * 24.0;
+                if seg_y < 0.0 || seg_y > h {
+                    continue;
+                }
+                let fade = 1.0 - f64::from(k) * 0.22;
+                let c = [
+                    (f64::from(self.color[0]) * fade) as u8,
+                    (f64::from(self.color[1]) * fade) as u8,
+                    (f64::from(self.color[2]) * fade) as u8,
+                    self.color[3],
+                ];
+                fill_rect(fx, x - 2.0, seg_y - 12.0, 4.0, 24.0, c);
+            }
+            // Bright head.
+            fill_rect(
+                fx,
+                x - 2.0,
+                head - 2.0,
+                4.0,
+                4.0,
+                [self.color[0], 255, self.color[2], self.color[3]],
+            );
+            x += cell;
+            col += 1;
+        }
+    }
+}
+
+impl Default for CodeRain {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Plasma field: layered sine interference colored through a fire
+/// ramp, animating over time. Per-4px-block fill (soft pixels).
+#[derive(Clone, Copy, Debug)]
+pub struct Plasma {
+    /// Spatial frequency.
+    pub frequency: f64,
+    /// Animation speed.
+    pub speed: f64,
+}
+
+impl Plasma {
+    /// Defaults: gentle frequency, slow drift.
+    #[must_use]
+    pub fn new() -> Self {
+        Plasma {
+            frequency: 0.02,
+            speed: 0.6,
+        }
+    }
+
+    /// Paint the plasma over the full surface.
+    pub fn draw(&self, fx: &mut Fx, width: usize, height: usize) {
+        let block = 4.0;
+        let t = fx.t * self.speed;
+        let bx = (width as f64 / block).ceil() as i32;
+        let by = (height as f64 / block).ceil() as i32;
+        for j in 0..by {
+            for i in 0..bx {
+                let x = f64::from(i) * block;
+                let y = f64::from(j) * block;
+                let v = (x * self.frequency + t).sin()
+                    + (y * self.frequency * 1.3 - t * 0.7).sin()
+                    + ((x + y) * self.frequency * 0.7 + t * 0.4).sin();
+                // v in ~[-3, 3] -> [0, 1].
+                let n = (v + 3.0) / 6.0;
+                let c = [
+                    (80.0 + 120.0 * n) as u8,
+                    (40.0 + 90.0 * (1.0 - n)) as u8,
+                    (120.0 + 80.0 * n.sin().abs()) as u8,
+                    160,
+                ];
+                fill_rect(fx, x, y, block, block, c);
+            }
+        }
+    }
+}
+
+impl Default for Plasma {
+    fn default() -> Self {
+        Self::new()
+    }
+}
