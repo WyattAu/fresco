@@ -6,6 +6,7 @@
 //! iteration order, pure arithmetic, no platform state.
 
 pub mod grid;
+pub mod slice;
 pub mod solver;
 
 pub use grid::{Field, VelocityField};
