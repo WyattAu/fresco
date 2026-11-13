@@ -226,6 +226,52 @@ fn main() {
             }
         }
 
+        // Velocity slice panel (top-down cut plane at mid-height):
+        // heat_ramp by flow speed, showing the updraft core and the
+        // diversion around the obstacle.
+        {
+            let panel_w = 80_usize;
+            let panel_h = 160_usize;
+            let origin_px = (256 - panel_w - 8, 8);
+            let mid_y = 12_usize;
+            let mut speed_max = 1e-6_f64;
+            let mut speeds = vec![0.0_f64; panel_w * panel_h];
+            for py in 0..panel_h {
+                for px in 0..panel_w {
+                    let (gx, gy, gz) = fluid_kit::slice::slice_grid_coords(
+                        fluid_kit::slice::SliceAxis::Y,
+                        mid_y,
+                        solver.density.dims,
+                        panel_w,
+                        panel_h,
+                        px,
+                        py,
+                    );
+                    let [vx, vy, vz] = solver.velocity.sample(gx, gy, gz);
+                    let sp = (vx * vx + vy * vy + vz * vz).sqrt();
+                    if let Some(slot) = speeds.get_mut(py * panel_w + px) {
+                        *slot = sp;
+                    }
+                    speed_max = speed_max.max(sp);
+                }
+            }
+            let data = surface.data_mut();
+            for py in 0..panel_h {
+                for px in 0..panel_w {
+                    let sp = speeds.get(py * panel_w + px).copied().unwrap_or(0.0);
+                    let t = (sp / speed_max).clamp(0.0, 1.0);
+                    let [r, g, b, _a] = fluid_kit::slice::heat_ramp(t);
+                    let col = origin_px.0 + px;
+                    let row = origin_px.1 + py;
+                    let base = (row * width + col) * 4;
+                    if let Some(slot) = data.get_mut(base..base + 4) {
+                        let bytes = [r, g, b, 255];
+                        slot.copy_from_slice(&bytes);
+                    }
+                }
+            }
+        }
+
         let path = format!("{out_dir}/smoke-{f:02}.bmp");
         let aref = render_conformance::SurfaceRef {
             data: surface.data(),
