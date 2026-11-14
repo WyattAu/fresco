@@ -13,7 +13,7 @@
 
 pub mod scene;
 
-use paint_kit::Surface;
+use paint_kit::{Paint, Rect, Solid, Surface, Vec2};
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop};
@@ -30,12 +30,18 @@ struct ShowcaseApp {
     surface: Option<softbuffer::Surface<std::sync::Arc<Window>, std::sync::Arc<Window>>>,
     scene_surface: Option<Surface>,
     scene_painter: Option<paint_kit::Painter>,
+    /// Static layer (background + grid), rendered once per resize.
+    base: Option<Surface>,
+    /// The sweep band's rect last frame (damage region).
+    band_prev: Option<(f64, f64, f64, f64)>,
     touches: Vec<TouchDot>,
     clock: std::time::Instant,
     frame: u64,
     inspector: Option<Inspector>,
     last_frame_at: Option<std::time::Instant>,
     fps: f64,
+    /// Per-frame paint cost of the last frame (us), for pacing.
+    paint_us: u64,
 }
 
 impl Default for ShowcaseApp {
@@ -46,12 +52,15 @@ impl Default for ShowcaseApp {
             surface: None,
             scene_surface: None,
             scene_painter: None,
+            base: None,
+            band_prev: None,
             touches: Vec::new(),
             clock: std::time::Instant::now(),
             frame: 0,
             inspector: None,
             last_frame_at: None,
             fps: 0.0,
+            paint_us: 0,
         }
     }
 }
@@ -75,8 +84,89 @@ impl ShowcaseApp {
         );
     }
 
+    /// Render the static base layer (background + grid) once.
+    fn render_base(&mut self, w: usize, h: usize) {
+        let mut painter = paint_kit::Painter::default();
+        let mut base = Surface::new(w, h).unwrap_or_default();
+        let bw = w as f64;
+        let bh = h as f64;
+        painter.fill_rect(
+            &mut base,
+            Rect::from_size(Vec2::ZERO, Vec2::new(bw, bh)),
+            &Paint::from(Solid::premul([22, 24, 32, 255])),
+        );
+        let cell = 48.0;
+        let mut x = 0.0;
+        while x <= bw {
+            painter.fill_rect(
+                &mut base,
+                Rect::from_size(Vec2::new(x, 0.0), Vec2::new(1.0, bh)),
+                &Paint::from(Solid::premul([70, 74, 88, 110])),
+            );
+            x += cell;
+        }
+        let mut y = 0.0;
+        while y <= bh {
+            painter.fill_rect(
+                &mut base,
+                Rect::from_size(Vec2::new(0.0, y), Vec2::new(bw, 1.0)),
+                &Paint::from(Solid::premul([70, 74, 88, 110])),
+            );
+            y += cell;
+        }
+        self.base = Some(base);
+    }
+
+    /// Copy a rect of pixels from the base layer onto the scene
+    /// surface (damage restore).
+    fn restore_region(
+        scene: &mut Surface,
+        base: &Surface,
+        x0: usize,
+        y0: usize,
+        w: usize,
+        h: usize,
+    ) {
+        let sw = scene.width();
+        for row in y0..(y0 + h).min(scene.height()) {
+            let dst_base = (row * sw + x0) * 4;
+            let src_base = (row * base.width() + x0) * 4;
+            let span = w * 4;
+            let dst = scene.data_mut().get_mut(dst_base..dst_base + span);
+            let src = base.data().get(src_base..src_base + span);
+            if let (Some(d), Some(s)) = (dst, src) {
+                d.copy_from_slice(s);
+            }
+        }
+    }
+
+    /// Copy a rect of pixels from base onto scene (shared impl used
+    /// by the loop and tests).
+    /// The sweep band's rect at time `t`.
+    fn band_rect(t: f64, w: f64, h: f64) -> (f64, f64, f64, f64) {
+        let band_y = (t * 120.0) % (h + 160.0) - 80.0;
+        (0.0, band_y, w, 120.0)
+    }
+
+    /// Paint the sweep band (after damage restore).
+    fn paint_band(
+        surface: &mut Surface,
+        painter: &mut paint_kit::Painter,
+        rect: (f64, f64, f64, f64),
+    ) {
+        let (x0, y0, bw, bh) = rect;
+        painter.fill_rect(
+            surface,
+            Rect::from_size(Vec2::new(x0, y0), Vec2::new(bw, bh)),
+            &Paint::from(Solid::premul([60, 90, 160, 46])),
+        );
+    }
+
     /// Paint the scene into the scene surface and blit to the
-    /// softbuffer framebuffer, then present.
+    /// softbuffer framebuffer, then present. Damage-tracked: the
+    /// static base layer provides background + grid (rendered once,
+    /// restored under damaged rects); per frame only the band and
+    /// touch dots are painted.
     fn paint_and_present(&mut self) {
         let Some(window) = self.window.clone() else {
             return;
@@ -84,27 +174,101 @@ impl ShowcaseApp {
         let size = window.inner_size();
         let (wu, hu) = (size.width.max(1) as usize, size.height.max(1) as usize);
 
-        // Paint the scene.
         let paint_start = std::time::Instant::now();
-        let scene_surface = self
+        let mut scene_surface = self
             .scene_surface
-            .get_or_insert_with(|| Surface::new(wu, hu).unwrap_or_default());
+            .take()
+            .unwrap_or_else(|| Surface::new(wu, hu).unwrap_or_default());
         if scene_surface.width() != wu || scene_surface.height() != hu {
-            *scene_surface = Surface::new(wu, hu).unwrap_or_default();
+            scene_surface = Surface::new(wu, hu).unwrap_or_default();
+            self.base = None;
+            self.band_prev = None;
         }
-        let mut painter = self.scene_painter.take().unwrap_or_default();
-        let fps = self.fps;
-        let touches = self.touches.clone();
-        let _ops = scene::render_scene(
-            scene_surface,
-            &mut painter,
-            wu,
-            hu,
-            self.clock.elapsed().as_secs_f64(),
-            &touches,
-            fps,
-        );
+        if self.base.is_none() {
+            self.render_base(wu, hu);
+        }
+        let Some(base) = self.base.clone() else {
+            self.scene_surface = Some(scene_surface);
+            return;
+        };
+
+        let mut painter = self
+            .scene_painter
+            .take()
+            .unwrap_or_else(paint_kit::Painter::default);
+        let t = self.clock.elapsed().as_secs_f64();
+        let band = Self::band_rect(t, wu as f64, hu as f64);
+
+        // DAMAGE RESTORE FIRST: base pixels under the previous band,
+        // the new band, and the touch dots. Painting the band before
+        // the restore erased it (caught on-device: the sweep band
+        // vanished from the screen).
+        let mut damage_rects = self.band_prev.iter().copied().collect::<Vec<_>>();
+        damage_rects.push(band);
+        for dot in &self.touches {
+            let age = t - dot.age;
+            let fade = (1.0 - age / 2.0).clamp(0.15, 1.0);
+            let cx = dot.pos.0 * wu as f64;
+            let cy = dot.pos.1 * hu as f64;
+            let r = 10.0 + 14.0 * (1.0 - fade) + 16.0;
+            damage_rects.push((cx - r, cy - r, r * 2.0, r * 2.0));
+        }
+        for (x0, y0, bw, bh) in &damage_rects {
+            let rx = (*x0).max(0.0).floor() as usize;
+            let ry = (*y0).max(0.0).floor() as usize;
+            let rw = (*bw).ceil() as usize;
+            let rh = (*bh).ceil() as usize;
+            let rw = rw.min(wu.saturating_sub(rx));
+            let rh = rh.min(hu.saturating_sub(ry));
+            if rw == 0 || rh == 0 {
+                continue;
+            }
+            Self::restore_region(&mut scene_surface, &base, rx, ry, rw, rh);
+        }
+
+        // THEN paint the band and the touch dots on the restored base.
+        Self::paint_band(&mut scene_surface, &mut painter, band);
+
+        let mut touches = self.touches.clone();
+        for dot in &mut touches {
+            dot.age = t - dot.age;
+        }
+        for dot in &touches {
+            let fade = (1.0 - dot.age / 2.0).clamp(0.15, 1.0);
+            let a = f64::from(220_u8) * fade;
+            let cx = dot.pos.0 * wu as f64;
+            let cy = dot.pos.1 * hu as f64;
+            let r = 10.0 + 14.0 * (1.0 - fade);
+            for (rr, aa) in [(r, a), (r * 0.7, a / 2.0), (r * 0.45, a)] {
+                painter.fill_rect(
+                    &mut scene_surface,
+                    Rect::from_size(Vec2::new(cx - rr, cy - rr), Vec2::new(rr * 2.0, rr * 2.0)),
+                    &Paint::from(Solid::premul([90, 200, 160, aa.round().min(255.0) as u8])),
+                );
+            }
+        }
+        let now_t = t;
+        let mut touches = self.touches.clone();
+        for dot in &mut touches {
+            dot.age = now_t - dot.age;
+        }
+        for dot in &touches {
+            let fade = (1.0 - dot.age / 2.0).clamp(0.15, 1.0);
+            let a = f64::from(220_u8) * fade;
+            let cx = dot.pos.0 * wu as f64;
+            let cy = dot.pos.1 * hu as f64;
+            let r = 10.0 + 14.0 * (1.0 - fade);
+            for (rr, aa) in [(r, a), (r * 0.7, a / 2.0), (r * 0.45, a)] {
+                painter.fill_rect(
+                    &mut scene_surface,
+                    Rect::from_size(Vec2::new(cx - rr, cy - rr), Vec2::new(rr * 2.0, rr * 2.0)),
+                    &Paint::from(Solid::premul([90, 200, 160, aa.round().min(255.0) as u8])),
+                );
+            }
+        }
         self.scene_painter = Some(painter);
+        self.band_prev = Some(band);
+        self.scene_surface = Some(scene_surface);
         let paint_us = paint_start.elapsed().as_micros();
 
         // Blit to the present buffer: paint-kit premultiplied RGBA8
@@ -132,10 +296,10 @@ impl ShowcaseApp {
             self.surface = Some(sb_surface);
             return;
         };
-        let data = scene_surface.data();
+        let data = self.scene_surface.as_ref().map(|s| s.data()).unwrap_or(&[]);
         for (k, px) in buffer.iter_mut().enumerate() {
-            let base = k * 4;
-            let Some(quadruple) = data.get(base..base + 4) else {
+            let base_i = k * 4;
+            let Some(quadruple) = data.get(base_i..base_i + 4) else {
                 break;
             };
             let Ok([r, g, b, a]) = <[u8; 4]>::try_from(quadruple) else {
@@ -147,7 +311,6 @@ impl ShowcaseApp {
         if let Some(e) = present_err {
             println!("[fresco] present failed: {e}");
         }
-        // Restore the surface for the next frame (also on error).
         self.surface = Some(sb_surface);
 
         // Observability + pacing bookkeeping.
@@ -179,7 +342,7 @@ impl ShowcaseApp {
         window.request_redraw();
     }
 
-    /// Age out touch dots (2 s trail).
+    /// Age out touch dots (2 s trail).    /// Age out touch dots (2 s trail).
     fn age_touches(&mut self) {
         let now = self.clock.elapsed().as_secs_f64();
         self.touches.retain_mut(|dot| {
