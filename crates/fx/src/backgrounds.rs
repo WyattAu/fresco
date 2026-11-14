@@ -820,3 +820,276 @@ impl Default for Plasma {
         Self::new()
     }
 }
+
+/// CRT scan lines: horizontal darker stripes that drift slowly
+/// downward over time. Animated overlay.
+#[derive(Clone, Copy, Debug)]
+pub struct ScanLines {
+    /// Spacing between stripe centers in px.
+    pub spacing: f64,
+    /// Stripe darkness (alpha of the overlay stripes).
+    pub strength: f64,
+    /// Downward drift in px/s.
+    pub drift: f64,
+}
+
+impl ScanLines {
+    /// Defaults: 6 px spacing, subtle, slow drift.
+    #[must_use]
+    pub fn new() -> Self {
+        ScanLines {
+            spacing: 6.0,
+            strength: 0.18,
+            drift: 12.0,
+        }
+    }
+
+    /// Paint the scan lines over the full surface.
+    pub fn draw(&self, fx: &mut Fx, width: usize, height: usize) {
+        let spacing = self.spacing.max(3.0);
+        let h = height as f64;
+        let offset = (fx.t * self.drift) % spacing;
+        let mut y = -spacing + offset;
+        while y < h {
+            let a = (255.0 * self.strength.clamp(0.0, 1.0)).round() as u8;
+            fill_rect(fx, 0.0, y, width as f64, spacing * 0.45, [10, 12, 18, a]);
+            y += spacing;
+        }
+    }
+}
+
+impl Default for ScanLines {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Aurora curtain: layered vertical gradient bands swaying with
+/// sine curves, alpha-composited. Animated, calm.
+#[derive(Clone, Copy, Debug)]
+pub struct Aurora {
+    /// Band count.
+    pub bands: usize,
+    /// Sway amplitude in px.
+    pub sway: f64,
+    /// Animation speed.
+    pub speed: f64,
+}
+
+impl Aurora {
+    /// Defaults: 3 bands, 40 px sway.
+    #[must_use]
+    pub fn new() -> Self {
+        Aurora {
+            bands: 3,
+            sway: 40.0,
+            speed: 0.4,
+        }
+    }
+
+    /// Paint the aurora over the full surface.
+    pub fn draw(&self, fx: &mut Fx, width: usize, height: usize) {
+        let t = fx.t * self.speed;
+        let palette: [[u8; 4]; 3] = [
+            [80, 240, 180, 60],  // mint
+            [90, 150, 240, 55],  // blue
+            [180, 110, 240, 50], // violet
+        ];
+        for band in 0..self.bands.max(1) {
+            let fband = f64::from(u32::try_from(band).unwrap_or(0));
+            let color = match palette.get(band % palette.len()) {
+                Some(&c) => c,
+                None => continue,
+            };
+            let base_y = f64::from(u32::try_from(height).unwrap_or(0)) * (0.25 + 0.18 * fband);
+            let amp = self.sway * (1.0 + 0.3 * fband);
+            let phase = t + fband * 1.7;
+            // Column strips with sine-swayed band tops, fading down.
+            let step = 8.0;
+            let mut x = 0.0;
+            while x < width as f64 {
+                let wobble =
+                    (x * 0.02 + phase).sin() * amp + (x * 0.007 - phase * 0.6).sin() * amp * 0.5;
+                let top = base_y + wobble;
+                let band_h = f64::from(u32::try_from(height).unwrap_or(0))
+                    * 0.16
+                    * (1.0 + 0.3 * (x * 0.01 + phase).sin());
+                let c = [
+                    (f64::from(color[0])
+                        * (1.0
+                            - 0.3 * fband
+                                / f64::from(u32::try_from(self.bands.max(1)).unwrap_or(1))))
+                        as u8,
+                    color[1],
+                    color[2],
+                    color[3],
+                ];
+                fill_rect(fx, x, top, step, band_h, c);
+                x += step;
+            }
+        }
+    }
+}
+
+impl Default for Aurora {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Constellation lines: seeded star points connected by thin lines
+/// to their nearest neighbors. Static per seed.
+#[derive(Clone, Copy, Debug)]
+pub struct Constellation {
+    /// Star count.
+    pub stars: usize,
+    /// Per-instance seed.
+    pub seed: u64,
+    /// Line + star color, straight RGBA.
+    pub color: [u8; 4],
+}
+
+impl Constellation {
+    /// Defaults: 14 stars, soft white.
+    #[must_use]
+    pub fn new() -> Self {
+        Constellation {
+            stars: 14,
+            seed: 0xC051,
+            color: [210, 216, 235, 130],
+        }
+    }
+
+    /// Paint stars and their connection lines.
+    pub fn draw(&self, fx: &mut Fx, width: usize, height: usize) {
+        let mut rand = FxRand::new(self.seed);
+        let mut pts: Vec<(f64, f64)> = Vec::with_capacity(self.stars);
+        for _ in 0..self.stars {
+            pts.push((
+                rand.next_range(16.0, width as f64 - 16.0),
+                rand.next_range(16.0, height as f64 - 16.0),
+            ));
+        }
+        // Lines: each star connects to its nearest 1-2 successors.
+        let seg = |fx: &mut Fx, x0: f64, y0: f64, x1: f64, y1: f64| {
+            let steps = ((x1 - x0).abs().max((y1 - y0).abs()) / 2.0).ceil().max(1.0) as i32;
+            for k in 0..=steps {
+                let f = f64::from(k) / f64::from(steps);
+                fill_rect(
+                    fx,
+                    x0 + (x1 - x0) * f - 1.0,
+                    y0 + (y1 - y0) * f - 1.0,
+                    2.0,
+                    2.0,
+                    self.color,
+                );
+            }
+        };
+        for (i, (x, y)) in pts.iter().enumerate() {
+            // Distances to later stars.
+            let mut cands: Vec<(usize, f64)> = pts
+                .iter()
+                .enumerate()
+                .skip(i + 1)
+                .map(|(j, (px, py))| (j, (px - x).hypot(py - y)))
+                .collect();
+            cands.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+            for (j, _) in cands.iter().take(2) {
+                let Some((px, py)) = pts.get(*j).copied() else {
+                    continue;
+                };
+                seg(fx, *x, *y, px, py);
+            }
+        }
+        // Stars on top: 3 px dots.
+        for (x, y) in &pts {
+            fill_rect(
+                fx,
+                x - 1.5,
+                y - 1.5,
+                3.0,
+                3.0,
+                [self.color[0], self.color[1], self.color[2], 235],
+            );
+        }
+    }
+}
+
+impl Default for Constellation {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Topographic contour lines: seeded nested wobbly rings suggesting
+/// elevation maps. Static per seed.
+#[derive(Clone, Copy, Debug)]
+pub struct TopoMap {
+    /// Contour system count (independent centers).
+    pub systems: usize,
+    /// Rings per system.
+    pub rings: usize,
+    /// Per-instance seed.
+    pub seed: u64,
+    /// Line color, straight RGBA.
+    pub color: [u8; 4],
+}
+
+impl TopoMap {
+    /// Defaults: 3 systems, 5 rings, dim lines.
+    #[must_use]
+    pub fn new() -> Self {
+        TopoMap {
+            systems: 3,
+            rings: 5,
+            seed: 0x7090,
+            color: [140, 150, 165, 80],
+        }
+    }
+
+    /// Paint contour rings over the full surface.
+    pub fn draw(&self, fx: &mut Fx, width: usize, height: usize) {
+        let mut rand = FxRand::new(self.seed);
+        for _ in 0..self.systems {
+            let cx = rand.next_range(40.0, width as f64 - 40.0);
+            let cy = rand.next_range(40.0, height as f64 - 40.0);
+            let base_r = rand.next_range(18.0, 42.0);
+            let wob = rand.next_range(0.1, 0.35);
+            let lobes = 3 + rand.next_index(3);
+            let phase = rand.next_range(0.0, std::f64::consts::TAU);
+            for ring in 0..self.rings {
+                let r = base_r + f64::from(u32::try_from(ring).unwrap_or(0)) * 14.0;
+                let steps = 48;
+                let mut prev: Option<(f64, f64)> = None;
+                for k in 0..=steps {
+                    let a = std::f64::consts::TAU * f64::from(k) / f64::from(steps);
+                    let rr = r * (1.0 + wob * (lobes as f64 * a + phase).sin());
+                    let px = cx + rr * a.cos();
+                    let py = cy + rr * a.sin();
+                    if let Some((x0, y0)) = prev {
+                        let steps2 =
+                            ((px - x0).abs().max((py - y0).abs()) / 2.0).ceil().max(1.0) as i32;
+                        for k2 in 0..=steps2 {
+                            let f = f64::from(k2) / f64::from(steps2);
+                            fill_rect(
+                                fx,
+                                x0 + (px - x0) * f - 1.0,
+                                y0 + (py - y0) * f - 1.0,
+                                2.0,
+                                2.0,
+                                self.color,
+                            );
+                        }
+                    }
+                    prev = Some((px, py));
+                }
+            }
+        }
+    }
+}
+
+impl Default for TopoMap {
+    fn default() -> Self {
+        Self::new()
+    }
+}

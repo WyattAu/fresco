@@ -38,8 +38,8 @@ pub mod rand;
 pub mod text;
 
 pub use backgrounds::{
-    Beams, CircuitBoard, CodeRain, DotPattern, FlickeringGrid, GradientMesh, GridPattern, HexGrid,
-    NoiseField, Particles, Plasma, StarField, Waves,
+    Aurora, Beams, CircuitBoard, CodeRain, Constellation, DotPattern, FlickeringGrid, GradientMesh,
+    GridPattern, HexGrid, NoiseField, Particles, Plasma, ScanLines, StarField, TopoMap, Waves,
 };
 pub use text::{CountUp, ScrambledText, ShimmerText};
 

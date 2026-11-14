@@ -3,8 +3,8 @@
 //! device review.
 
 use fx::{
-    Beams, CircuitBoard, CodeRain, DotPattern, FlickeringGrid, GradientMesh, GridPattern, HexGrid,
-    NoiseField, Particles, Plasma, StarField, Waves,
+    Aurora, Beams, CircuitBoard, CodeRain, Constellation, DotPattern, FlickeringGrid, GradientMesh,
+    GridPattern, HexGrid, NoiseField, Particles, Plasma, ScanLines, StarField, TopoMap, Waves,
 };
 use paint_kit::{Painter, Surface};
 
@@ -27,6 +27,10 @@ fn render_one(kind: usize, t: f64) -> Surface {
         10 => CircuitBoard::new().draw(&mut fx, 320, 160),
         11 => CodeRain::new().draw(&mut fx, 320, 160),
         12 => Plasma::new().draw(&mut fx, 320, 160),
+        13 => ScanLines::new().draw(&mut fx, 320, 160),
+        14 => Aurora::new().draw(&mut fx, 320, 160),
+        15 => Constellation::new().draw(&mut fx, 320, 160),
+        16 => TopoMap::new().draw(&mut fx, 320, 160),
         _ => {}
     }
     surface
@@ -43,7 +47,7 @@ fn fnv1a(data: &[u8]) -> u64 {
 
 #[test]
 fn backgrounds_are_deterministic() {
-    for kind in 0..13_usize {
+    for kind in 0..17_usize {
         let a = render_one(kind, 1.0);
         let b = render_one(kind, 1.0);
         assert_eq!(
@@ -59,7 +63,7 @@ fn backgrounds_match_golden_hashes() {
     // Constants recorded from the first deterministic run; update via
     // GATE_FX_REBASELINE=1 --nocapture when a background intentionally
     // changes.
-    const GOLDENS: [u64; 13] = [
+    const GOLDENS: [u64; 17] = [
         0xf584_5953_5b8b_c3a5, // grid pattern
         0x832d_bc45_a0a3_2d2d, // dot pattern
         0x5c16_4427_ff6e_3071, // star field
@@ -73,6 +77,10 @@ fn backgrounds_match_golden_hashes() {
         0x968c_d626_6e7b_527a, // circuit board
         0xcb01_ff7e_ac93_757d, // code rain
         0xb615_8bf1_c3f9_0b65, // plasma
+        0x3a5d_aae8_77c9_7525, // scan lines
+        0x99de_bbdc_5746_dc05, // aurora
+        0xba51_69e0_6b2e_544a, // constellation
+        0xf475_49cf_c04f_e480, // topo map
     ];
     for (kind, golden) in GOLDENS.iter().enumerate() {
         let surface = render_one(kind, 1.0);
@@ -88,7 +96,7 @@ fn backgrounds_match_golden_hashes() {
 
 #[test]
 fn backgrounds_artifacts_written() {
-    for kind in 0..13_usize {
+    for kind in 0..17_usize {
         let surface = render_one(kind, 1.0);
         let dir = std::path::Path::new("/tmp/opencode");
         std::fs::create_dir_all(dir).ok();
