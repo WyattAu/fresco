@@ -7,6 +7,7 @@ members = [
     "crates/phys-kit",
     "crates/ecs-kit",
     "crates/fluid-kit",
+    "crates/fresco-android",
     "crates/three-kit",
     "crates/anim-kit",
     "crates/scene-kit",

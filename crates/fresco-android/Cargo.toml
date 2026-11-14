@@ -1,0 +1,49 @@
+[package]
+name = "fresco-android"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Android windowed showcase for the fresco UI engine (M2): winit android-activity + softbuffer present, observability wired per frame"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+winit = { version = "0.30" }
+paint-kit = { workspace = true }
+window-kit = { workspace = true }
+path-kit = { workspace = true }
+softbuffer = "0.4"
+
+[target.'cfg(target_os = "android")'.dependencies]
+winit = { version = "0.30", features = ["android-native-activity"] }
+android-activity = "0.6"
+
+[lints.rust]
+missing_docs = "deny"
+# The NativeActivity entry (android_main) requires #[unsafe(no_mangle)]
+# in edition 2024 - the FFI shell is the one sanctioned unsafe surface;
+# all inner modules stay safe.
+unsafe_code = "allow"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+
+[package.metadata.android]
+package = "dev.wyattau.fresco_m2"
+apk_name = "fresco-m2"
+
+[package.metadata.android.application]
+label = "fresco M2"
+
+[package.metadata.android.application.activity]
+orientation = "portrait"
+theme = "@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen"
+
+[[package.metadata.android.uses_permission]]
+name = "android.permission.INTERNET"
