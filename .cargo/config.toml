@@ -1,5 +1,6 @@
-[build]
-target-dir = "/home/wyatt/.cache/cargo-target"
-
+# Android cross-compile: NDK clang wrapper as the target linker.
+# (target-dir is intentionally NOT set here - CI runners have no
+# /home/wyatt; export CARGO_TARGET_DIR=$HOME/.cache/cargo-target
+# locally per the fleet build rule.)
 [target.aarch64-linux-android]
 linker = "/home/wyatt/Android/ndk/android-ndk-r28b/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang"
