@@ -92,10 +92,7 @@ impl ShowcaseApp {
         if scene_surface.width() != wu || scene_surface.height() != hu {
             *scene_surface = Surface::new(wu, hu).unwrap_or_default();
         }
-        let mut painter = self
-            .scene_painter
-            .take()
-            .unwrap_or_else(paint_kit::Painter::default);
+        let mut painter = self.scene_painter.take().unwrap_or_default();
         let fps = self.fps;
         let touches = self.touches.clone();
         let _ops = scene::render_scene(
@@ -141,10 +138,10 @@ impl ShowcaseApp {
             let Some(quadruple) = data.get(base..base + 4) else {
                 break;
             };
-            *px = u32::from(quadruple[3]) << 24
-                | u32::from(quadruple[2]) << 16
-                | u32::from(quadruple[1]) << 8
-                | u32::from(quadruple[0]);
+            let Ok([r, g, b, a]) = <[u8; 4]>::try_from(quadruple) else {
+                break;
+            };
+            *px = u32::from(a) << 24 | u32::from(b) << 16 | u32::from(g) << 8 | u32::from(r);
         }
         let present_err = buffer.present().err();
         if let Some(e) = present_err {
@@ -169,7 +166,7 @@ impl ShowcaseApp {
         }
         self.last_frame_at = Some(now);
         self.frame += 1;
-        if self.frame % 120 == 0 {
+        if self.frame.is_multiple_of(120) {
             println!(
                 "[fresco] frame {} fps {:.1} paint {}us touches {}",
                 self.frame,
@@ -289,10 +286,10 @@ impl ApplicationHandler for ShowcaseApp {
                 }
             }
             WindowEvent::MouseInput { state, .. } => {
-                if state == ElementState::Pressed {
-                    if let Some(window) = self.window.clone() {
-                        window.request_redraw();
-                    }
+                if state == ElementState::Pressed
+                    && let Some(window) = self.window.clone()
+                {
+                    window.request_redraw();
                 }
             }
             _ => {}
@@ -327,12 +324,14 @@ mod android_entry {
     #[unsafe(no_mangle)]
     fn android_main(app: android_activity::AndroidApp) {
         println!("[fresco] android_main: starting M2 showcase");
-        let event_loop = EventLoop::builder()
-            .with_android_app(app)
-            .build()
-            .expect("android event loop");
-        event_loop
-            .run_app(&mut ShowcaseApp::default())
-            .expect("android run");
+        // Infallible by policy: a failed loop logs and lets the app
+        // exit cleanly rather than crashing the process.
+        let Ok(event_loop) = EventLoop::builder().with_android_app(app).build() else {
+            println!("[fresco] event loop failed");
+            return;
+        };
+        if let Err(e) = event_loop.run_app(&mut ShowcaseApp::default()) {
+            println!("[fresco] run failed: {e}");
+        }
     }
 }

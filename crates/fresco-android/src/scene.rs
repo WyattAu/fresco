@@ -92,7 +92,7 @@ pub fn render_scene(
             painter.fill_rect(
                 surface,
                 Rect::from_size(Vec2::new(cx - rr, cy - rr), Vec2::new(rr * 2.0, rr * 2.0)),
-                &Paint::from(Solid::premul([90, 200, 160, aa.min(255)])),
+                &Paint::from(Solid::premul([90, 200, 160, aa])),
             );
             ops += 1;
         }
