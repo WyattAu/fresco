@@ -40,8 +40,6 @@ struct ShowcaseApp {
     inspector: Option<Inspector>,
     last_frame_at: Option<std::time::Instant>,
     fps: f64,
-    /// Per-frame paint cost of the last frame (us), for pacing.
-    paint_us: u64,
 }
 
 impl Default for ShowcaseApp {
@@ -60,7 +58,6 @@ impl Default for ShowcaseApp {
             inspector: None,
             last_frame_at: None,
             fps: 0.0,
-            paint_us: 0,
         }
     }
 }
@@ -192,10 +189,7 @@ impl ShowcaseApp {
             return;
         };
 
-        let mut painter = self
-            .scene_painter
-            .take()
-            .unwrap_or_else(paint_kit::Painter::default);
+        let mut painter = self.scene_painter.take().unwrap_or_default();
         let t = self.clock.elapsed().as_secs_f64();
         let band = Self::band_rect(t, wu as f64, hu as f64);
 
