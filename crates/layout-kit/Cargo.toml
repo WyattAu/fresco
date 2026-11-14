@@ -14,7 +14,7 @@ exclude = ["/target"]
 taffy = ["dep:taffy"]
 
 [dependencies]
-taffy = { version = "0.7", optional = true, default-features = false, features = ["std", "taffy_tree", "flexbox"] }
+taffy = { version = "0.15", optional = true, default-features = false, features = ["std", "taffy_tree", "flexbox"] }
 
 [lints.rust]
 missing_docs = "deny"
