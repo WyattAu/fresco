@@ -214,43 +214,85 @@ fn into_rect(rect: Rect2D) -> paint_kit::Rect {
 
 impl WidgetRenderer for DrawListPainter<'_> {
     fn label_text(&mut self, rect: Rect2D, text: &str, px_size: f64, color: [u8; 4]) {
-        // Micro-font glyphs: 3×5 source scaled to px_size tall, blitted
-        // with per-pixel coverage blending. Fully deterministic.
-        let scale = ((px_size / 5.0).round() as u32).max(1);
-        let advance = px_size * 0.6;
-        let baseline_y = rect.y + (rect.height * 0.5) - (f64::from(scale) * 5.0 * 0.5);
+        // Real-font glyphs first (embedded DejaVu Sans, anti-aliased
+        // coverage at any px size); micro-font fallback for chars the
+        // real font lacks. Both paths fully deterministic.
+        let baseline_y = rect.y + (rect.height * 0.5) + (px_size * 0.35);
         let mut pen_x = rect.x + 2.0;
+        let mut all_real = true;
         for ch in text.chars() {
-            if let Some(bitmap) = microfont::micro_bitmap(ch, scale) {
-                for gy in 0..bitmap.height {
-                    for gx in 0..bitmap.width {
-                        let idx = gy as usize * bitmap.width as usize + gx as usize;
-                        let cov = match bitmap.coverage.get(idx) {
-                            Some(c) => *c,
-                            None => continue,
-                        };
-                        if cov == 0 {
-                            continue;
+            match text_kit::realfont::glyph(ch, px_size) {
+                Some(g) => {
+                    // Blit the coverage bitmap blended with the text
+                    // color, positioned by bearings off the baseline.
+                    let x0 = pen_x + g.left_bearing;
+                    let y0 = baseline_y + g.top_offset;
+                    for gy in 0..g.height {
+                        for gx in 0..g.width {
+                            let idx = gy * g.width + gx;
+                            let cov = match g.coverage.get(idx) {
+                                Some(&c) => c,
+                                None => continue,
+                            };
+                            if cov == 0 {
+                                continue;
+                            }
+                            let alpha = f64::from(cov) / 255.0 * (f64::from(color[3]) / 255.0);
+                            let px = [
+                                ((f64::from(color[0]) / 255.0).sqrt() * 255.0).round() as u8,
+                                ((f64::from(color[1]) / 255.0).sqrt() * 255.0).round() as u8,
+                                ((f64::from(color[2]) / 255.0).sqrt() * 255.0).round() as u8,
+                                (alpha * 255.0).round() as u8,
+                            ];
+                            let dx = x0 + gx as f64;
+                            let dy = y0 + gy as f64;
+                            self.surface.blend_pixel(
+                                usize::try_from(dx as i64).unwrap_or(0),
+                                usize::try_from(dy as i64).unwrap_or(0),
+                                px,
+                            );
                         }
-                        let alpha = f64::from(cov) / 255.0 * (f64::from(color[3]) / 255.0);
-                        let px = [
-                            ((f64::from(color[0]) / 255.0).sqrt() * 255.0).round() as u8,
-                            ((f64::from(color[1]) / 255.0).sqrt() * 255.0).round() as u8,
-                            ((f64::from(color[2]) / 255.0).sqrt() * 255.0).round() as u8,
-                            (alpha * 255.0).round() as u8,
-                        ];
-                        let dx = pen_x + f64::from(gx);
-                        let dy = baseline_y + f64::from(gy);
-                        self.surface.blend_pixel(
-                            usize::try_from(dx as u64).unwrap_or(0),
-                            usize::try_from(dy as u64).unwrap_or(0),
-                            px,
-                        );
                     }
+                    pen_x += g.advance;
+                }
+                None => {
+                    all_real = false;
+                    // Micro-font fallback for this char.
+                    let scale = ((px_size / 5.0).round() as u32).max(1);
+                    let advance = px_size * 0.6;
+                    if let Some(bitmap) = microfont::micro_bitmap(ch, scale) {
+                        for gy in 0..bitmap.height {
+                            for gx in 0..bitmap.width {
+                                let idx = gy as usize * bitmap.width as usize + gx as usize;
+                                let cov = match bitmap.coverage.get(idx) {
+                                    Some(&c) => c,
+                                    None => continue,
+                                };
+                                if cov == 0 {
+                                    continue;
+                                }
+                                let alpha = f64::from(cov) / 255.0 * (f64::from(color[3]) / 255.0);
+                                let px = [
+                                    ((f64::from(color[0]) / 255.0).sqrt() * 255.0).round() as u8,
+                                    ((f64::from(color[1]) / 255.0).sqrt() * 255.0).round() as u8,
+                                    ((f64::from(color[2]) / 255.0).sqrt() * 255.0).round() as u8,
+                                    (alpha * 255.0).round() as u8,
+                                ];
+                                let dx = pen_x + f64::from(gx);
+                                let dy = baseline_y - f64::from(scale) * 5.0 + f64::from(gy);
+                                self.surface.blend_pixel(
+                                    usize::try_from(dx as i64).unwrap_or(0),
+                                    usize::try_from(dy as i64).unwrap_or(0),
+                                    px,
+                                );
+                            }
+                        }
+                    }
+                    pen_x += advance;
                 }
             }
-            pen_x += advance;
         }
+        let _ = all_real;
     }
 
     fn tab_strip(

@@ -2266,6 +2266,8 @@ dependencies = [
 name = "text-kit"
 version = "0.8.7"
 dependencies = [
+ "ab_glyph",
+ "ab_glyph_rasterizer",
  "parley",
 ]
 

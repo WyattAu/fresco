@@ -23,6 +23,7 @@ pub mod microfont;
 
 #[cfg(feature = "parley")]
 pub mod parley_backend;
+pub mod realfont;
 
 pub use atlas::{GlyphAtlas, GlyphBitmap, GlyphKey, GlyphRasterizer};
 pub use fake::FakeEngine;
