@@ -13,6 +13,7 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 winit = { version = "0.30" }
 paint-kit = { workspace = true }
+widget-kit = { workspace = true }
 window-kit = { workspace = true }
 path-kit = { workspace = true }
 softbuffer = "0.4"

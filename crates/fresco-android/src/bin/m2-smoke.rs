@@ -30,4 +30,19 @@ fn main() {
     }
     let analysis = inspector.analyze();
     println!("{analysis}");
+
+    // M4 widget screen: interactive settings UI, painted per frame.
+    let mut screen = fresco_android::widgets_screen::WidgetScreen::settings();
+    screen.resize(360, 740);
+    screen.pointer_down(180.0, 120.0);
+    screen.pointer_up(180.0, 120.0);
+    for _k in 0..frames {
+        screen.resize(360, 740);
+        let mut surface = paint_kit::Surface::new(360, 740).unwrap_or_default();
+        let mut painter = paint_kit::Painter::default();
+        screen.paint(&mut surface, &mut painter);
+        inspector.record_frame(surface.data(), 360, 740, 0, 0);
+    }
+    let analysis = inspector.analyze();
+    println!("{analysis}");
 }

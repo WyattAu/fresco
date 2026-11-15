@@ -702,6 +702,7 @@ dependencies = [
  "paint-kit",
  "path-kit",
  "softbuffer",
+ "widget-kit",
  "window-kit",
  "winit",
 ]
