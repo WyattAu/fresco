@@ -90,16 +90,26 @@ impl ShowcaseApp {
             return;
         };
         let size = window.inner_size();
+        let scale = window.scale_factor();
+        // Paint at LOGICAL resolution (360x740-class); the blit
+        // upscales to physical during the copy. Mid-range phone CPUs
+        // cannot full-frame paint at 1080x2400 (112 ms/frame on the
+        // A53); logical-res paint is ~9x cheaper and the buffer
+        // upscale is nearest-neighbor.
+        let (lwu, lhu) = (
+            ((size.width as f64 / scale).max(1.0) as usize),
+            ((size.height as f64 / scale).max(1.0) as usize),
+        );
         let (wu, hu) = (size.width.max(1) as usize, size.height.max(1) as usize);
 
         let paint_start = std::time::Instant::now();
-        self.screen.resize(wu, hu);
+        self.screen.resize(lwu, lhu);
         let mut scene_surface = self
             .scene_surface
             .take()
-            .unwrap_or_else(|| Surface::new(wu, hu).unwrap_or_default());
-        if scene_surface.width() != wu || scene_surface.height() != hu {
-            scene_surface = Surface::new(wu, hu).unwrap_or_default();
+            .unwrap_or_else(|| Surface::new(lwu, lhu).unwrap_or_default());
+        if scene_surface.width() != lwu || scene_surface.height() != lhu {
+            scene_surface = Surface::new(lwu, lhu).unwrap_or_default();
         }
         let mut painter = self.scene_painter.take().unwrap_or_default();
         self.screen.paint(&mut scene_surface, &mut painter);
@@ -110,10 +120,14 @@ impl ShowcaseApp {
         let paint_us = paint_start.elapsed().as_micros();
 
         // Blit: paint-kit premultiplied RGBA8 -> softbuffer
-        // 0xAABBGGRR u32. Take-and-restore: Surface is not Clone.
+        // 0xAABBGGRR u32, upscaled logical -> physical
+        // (nearest-neighbor). Take-and-restore: softbuffer Surface
+        // is not Clone.
         let Some(mut sb_surface) = self.surface.take() else {
             return;
         };
+        // Wayland requires the surface size be declared before the
+        // buffer is borrowed (NonZeroU32) — physical size.
         let Ok(sw) = u32::try_from(wu) else {
             self.surface = Some(sb_surface);
             return;
@@ -132,15 +146,27 @@ impl ShowcaseApp {
             return;
         };
         let data = self.scene_surface.as_ref().map(|s| s.data()).unwrap_or(&[]);
-        for (k, px) in buffer.iter_mut().enumerate() {
-            let base = k * 4;
+        let lw = wu as f64 / scale;
+        let lh = hu as f64 / scale;
+        let bwidth = sw as f64;
+        let bheight = sh as f64;
+        let total = (sw as usize).saturating_mul(sh as usize);
+        for k in 0..total {
+            let col = (k % sw as usize) as f64;
+            let row = (k / sw as usize) as f64;
+            // Physical -> logical (nearest neighbor).
+            let sx = (col * lw / bwidth).floor().max(0.0) as usize;
+            let sy = (row * lh / bheight).floor().max(0.0) as usize;
+            let base = (sy.min(lhu - 1) * lwu + sx.min(lwu - 1)) * 4;
             let Some(q) = data.get(base..base + 4) else {
                 break;
             };
             let Ok([r, g, b, a]) = <[u8; 4]>::try_from(q) else {
                 break;
             };
-            *px = u32::from(a) << 24 | u32::from(b) << 16 | u32::from(g) << 8 | u32::from(r);
+            if let Some(px) = buffer.get_mut(k) {
+                *px = u32::from(a) << 24 | u32::from(b) << 16 | u32::from(g) << 8 | u32::from(r);
+            }
         }
         if let Some(e) = buffer.present().err() {
             println!("[fresco] present failed: {e}");

@@ -32,8 +32,10 @@ impl WidgetScreen {
     pub fn settings() -> Self {
         let mut tree = WidgetTree::new();
         let root = tree.push(WidgetKind::Column { gap: 10.0 });
+        // ASCII-only strings: the 3x5 micro-font covers ASCII
+        // 32..=126; non-ASCII glyphs (em-dash etc.) render as gaps.
         let header = tree.push(WidgetKind::Label {
-            text: "fresco — Android".to_string(),
+            text: "fresco - Android".to_string(),
             px_size: 20.0,
         });
         tree.add_child(root, header);
