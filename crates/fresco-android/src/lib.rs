@@ -38,6 +38,9 @@ struct ShowcaseApp {
     inspector: Option<Inspector>,
     last_frame_at: Option<std::time::Instant>,
     fps: f64,
+    /// CSV pacing log: `frame,paint_us,fps` per frame (file-based so
+    /// the evidence survives logcat ring rotation).
+    pacing_file: Option<std::fs::File>,
 }
 
 impl Default for ShowcaseApp {
@@ -55,6 +58,7 @@ impl Default for ShowcaseApp {
             inspector: None,
             last_frame_at: None,
             fps: 0.0,
+            pacing_file: None,
         }
     }
 }
@@ -185,6 +189,18 @@ impl ApplicationHandler for ShowcaseApp {
         match event_loop.create_window(attrs) {
             Ok(window) => {
                 let window = std::sync::Arc::new(window);
+                // Redraw ticker: on Android, request_redraw alone does
+                // not wake the sleeping event loop (the loop waits for
+                // lifecycle/input events), so a 120 Hz ticker thread
+                // drives the redraw chain. request_redraw is
+                // thread-safe per winit.
+                let ticker_window = window.clone();
+                std::thread::spawn(move || {
+                    loop {
+                        ticker_window.request_redraw();
+                        std::thread::sleep(std::time::Duration::from_millis(8));
+                    }
+                });
                 match softbuffer::Context::new(window.clone()) {
                     Ok(ctx) => {
                         let surface = softbuffer::Surface::new(&ctx, window.clone())
@@ -208,14 +224,38 @@ impl ApplicationHandler for ShowcaseApp {
                 };
                 let dir = std::env::var("GATE_A_DIR").unwrap_or_else(|_| default_dir.to_owned());
                 self.inspector = Some(Inspector::with_dir(
-                    std::path::PathBuf::from(dir),
+                    std::path::PathBuf::from(&dir),
                     true,
                     60,
                     0,
                 ));
+                // File-based pacing capture: survives logcat rotation.
+                let pacing_path = std::path::Path::new(&dir).join("pacing.csv");
+                let _ = std::fs::create_dir_all(std::path::Path::new(&dir));
+                self.pacing_file = std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(&pacing_path)
+                    .map_err(|e| println!("[fresco] pacing open: {e}"))
+                    .ok();
+                if let Some(pf) = self.pacing_file.as_mut() {
+                    use std::io::Write;
+                    let _ = pf.write_all(b"frame,paint_us,fps_milli\n");
+                    let _ = pf.flush();
+                }
                 self.clock = std::time::Instant::now();
             }
             Err(e) => println!("[fresco] create_window: {e}"),
+        }
+    }
+
+    /// Keep the redraw chain alive: on Android the initial
+    /// request_redraw is consumed after one frame and the loop
+    /// otherwise sleeps until the next real event — winit's
+    /// about_to_wait hook re-arms it every iteration.
+    fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
+        if let Some(window) = self.window.clone() {
+            window.request_redraw();
         }
     }
 
