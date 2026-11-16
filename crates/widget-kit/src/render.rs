@@ -212,7 +212,34 @@ fn into_rect(rect: Rect2D) -> paint_kit::Rect {
     )
 }
 
+impl DrawListPainter<'_> {
+    /// Clip check for a text pixel: `blend_pixel` bypasses the
+    /// painter's clip, and alpha blending is order-dependent - a
+    /// repeated damage-region pass must not re-blend pixels outside
+    /// its region, or AA glyph ink diverges from the full render.
+    fn text_pixel_clipped(&self, x: f64, y: f64) -> bool {
+        match self.painter.clip() {
+            Some(c) => x < c.x0 || x >= c.x1 || y < c.y0 || y >= c.y1,
+            None => false,
+        }
+    }
+}
+
 impl WidgetRenderer for DrawListPainter<'_> {
+    fn push_clip(&mut self, rect: Rect2D) {
+        // Delegate to the painter's clip stack: fills intersect with
+        // any enclosing clip (nested ScrollPane regions compose), and
+        // label_text checks the same active clip for glyph pixels.
+        self.painter.push_clip(paint_kit::Rect::from_size(
+            paint_kit::Vec2::new(rect.x, rect.y),
+            paint_kit::Vec2::new(rect.width, rect.height),
+        ));
+    }
+
+    fn pop_clip(&mut self) {
+        self.painter.pop_clip();
+    }
+
     fn label_text(&mut self, rect: Rect2D, text: &str, px_size: f64, color: [u8; 4]) {
         // Real-font glyphs first (embedded DejaVu Sans, anti-aliased
         // coverage at any px size); micro-font fallback for chars the
@@ -246,6 +273,9 @@ impl WidgetRenderer for DrawListPainter<'_> {
                             ];
                             let dx = x0 + gx as f64;
                             let dy = y0 + gy as f64;
+                            if self.text_pixel_clipped(dx, dy) {
+                                continue;
+                            }
                             self.surface.blend_pixel(
                                 usize::try_from(dx as i64).unwrap_or(0),
                                 usize::try_from(dy as i64).unwrap_or(0),
@@ -280,6 +310,9 @@ impl WidgetRenderer for DrawListPainter<'_> {
                                 ];
                                 let dx = pen_x + f64::from(gx);
                                 let dy = baseline_y - f64::from(scale) * 5.0 + f64::from(gy);
+                                if self.text_pixel_clipped(dx, dy) {
+                                    continue;
+                                }
                                 self.surface.blend_pixel(
                                     usize::try_from(dx as i64).unwrap_or(0),
                                     usize::try_from(dy as i64).unwrap_or(0),
