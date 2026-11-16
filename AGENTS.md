@@ -50,6 +50,13 @@ above 80 percent per published crate.
    errors while an entry 404s. Add a crate to that list in the same
    commit as its publish; while unpublished, keep it in this file's
    Layout section only.
+   Appending to the manifest's `notes:` fields: the value is a YAML
+   double-quoted scalar. Escape inner `"` as `\"`, or prefer a folded
+   block (`notes: >-`). After ANY append, run
+   `python3 -c "import yaml;yaml.safe_load(open('estate.yml'))"` before
+   pushing: an unescaped quote broke the estate registry for a full day
+   (incident 2026-11-15); the estate-audit Manifest-schema step is the
+   backstop, not the guard.
 
 ## Layout
 
