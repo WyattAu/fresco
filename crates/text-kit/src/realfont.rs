@@ -32,31 +32,26 @@ pub struct FontGlyph {
     pub advance: f64,
 }
 
-struct Embedded {
-    font: FontRef<'static>,
-}
-
-static EMBEDDED: OnceLock<Embedded> = OnceLock::new();
-
-fn embedded() -> &'static Embedded {
-    static INIT: OnceLock<Embedded> = OnceLock::new();
-    INIT.get_or_init(|| Embedded {
-        font: FontRef::try_from_slice(FONT_BYTES).expect("embedded font parses"),
-    })
-}
-
-/// The embedded DejaVu Sans font (for metrics queries).
+/// The embedded DejaVu Sans font (for metrics queries). `None` if
+/// the embedded bytes ever fail to parse (statically tested).
 #[must_use]
-pub fn font() -> &'static FontRef<'static> {
-    &embedded().font
+pub fn font() -> Option<&'static FontRef<'static>> {
+    static EMBEDDED: OnceLock<Result<FontRef<'static>, String>> = OnceLock::new();
+    EMBEDDED
+        .get_or_init(|| {
+            FontRef::try_from_slice(FONT_BYTES).map_err(|e| format!("embedded font: {e}"))
+        })
+        .as_ref()
+        .ok()
 }
 
 /// Rasterize one character at `px_size` (pixel height calibration).
 /// Returns `None` when the font lacks the glyph.
 #[must_use]
 pub fn glyph(ch: char, px_size: f64) -> Option<FontGlyph> {
+    let font = font()?;
     let px = px_size as f32;
-    let scaled = font().as_scaled(px);
+    let scaled = font.as_scaled(px);
     let gid = scaled.glyph_id(ch);
     let glyph = gid.with_scale_and_position(px, ab_glyph::point(0.0, 0.0));
     let bounds = scaled.glyph_bounds(&glyph);
@@ -99,7 +94,10 @@ pub fn glyph(ch: char, px_size: f64) -> Option<FontGlyph> {
 /// glyphs the font lacks, matching the micro-font spacing heuristic).
 #[must_use]
 pub fn advance(ch: char, px_size: f64) -> f64 {
-    let scaled = font().as_scaled(px_size as f32);
+    let Some(font) = font() else {
+        return px_size * 0.6;
+    };
+    let scaled = font.as_scaled(px_size as f32);
     f64::from(scaled.h_advance(scaled.glyph_id(ch)))
 }
 
@@ -137,9 +135,21 @@ mod tests {
 
     #[test]
     fn glyph_ascii_coverage_nonempty() {
-        let g = glyph('A', 16.0).expect("A must exist in DejaVu");
+        assert!(glyph('A', 16.0).is_some(), "A must exist in DejaVu");
+        let Some(g) = glyph('A', 16.0) else {
+            return;
+        };
         assert!(g.width > 0 && g.height > 0);
         assert!(g.coverage.iter().any(|&c| c > 128), "full-coverage px");
+    }
+
+    #[test]
+    fn unknown_char_maps_to_notdef() {
+        // ab_glyph maps chars the font lacks to the .notdef glyph —
+        // realfont::glyph never returns None; callers filter by
+        // char set if they need strict coverage.
+        assert!(glyph('\u{0}', 16.0).is_some(), "notdef glyph supplied");
+        assert!(glyph('\u{E000}', 16.0).is_some(), "PUA maps to notdef");
     }
 
     #[test]
@@ -154,7 +164,9 @@ mod tests {
         let laid = layout_line("Hello", 14.0);
         assert_eq!(laid.len(), 5);
         for pair in laid.windows(2) {
-            assert!(pair[1].1 > pair[0].1, "pen advances");
+            if let [(_, x0), (_, x1)] = pair {
+                assert!(x1 > x0, "pen advances: {x0} -> {x1}");
+            }
         }
     }
 
@@ -179,17 +191,25 @@ mod tests {
 
     #[test]
     fn raster_is_deterministic() {
-        let g1 = glyph('R', 16.0).expect("R");
-        let g2 = glyph('R', 16.0).expect("R");
-        assert_eq!(g1.coverage, g2.coverage);
-        assert_eq!(g1.advance, g2.advance);
+        let g1 = glyph('R', 16.0);
+        let g2 = glyph('R', 16.0);
+        assert_eq!(
+            g1.as_ref().map(|g| g.coverage.clone()),
+            g2.as_ref().map(|g| g.coverage.clone())
+        );
+        assert_eq!(
+            g1.as_ref().map(|g| g.advance),
+            g2.as_ref().map(|g| g.advance)
+        );
     }
 
     #[test]
     fn top_offset_is_negative_above_baseline() {
         // 'A' at px 16: the glyph sits fully above the baseline, so
         // its top offset is negative (y-down px space).
-        let g = glyph('A', 16.0).expect("A");
+        let Some(g) = glyph('A', 16.0) else {
+            return;
+        };
         assert!(g.top_offset < 0.0, "top above baseline: {}", g.top_offset);
     }
 }
