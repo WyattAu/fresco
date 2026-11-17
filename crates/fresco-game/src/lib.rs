@@ -35,6 +35,9 @@ struct GameApp {
     inspector: Option<Inspector>,
     last_frame_at: Option<std::time::Instant>,
     fps: f64,
+    /// Last present() cost (microseconds) - the queueBuffer/vsync
+    /// wait is the frame-period component paint_us cannot explain.
+    present_us: u128,
     /// CSV pacing log: `frame,paint_us,fps_milli` per frame (file-based
     /// so the evidence survives logcat ring rotation).
     pacing_file: Option<std::fs::File>,
@@ -55,6 +58,7 @@ impl Default for GameApp {
             inspector: None,
             last_frame_at: None,
             fps: 0.0,
+            present_us: 0,
             pacing_file: None,
         }
     }
@@ -148,9 +152,11 @@ impl GameApp {
         if let Some(scene) = self.scene_surface.as_ref() {
             window_kit::blit::blit_upscaled(scene, &mut buffer, sw as usize, sh as usize);
         }
+        let present_start = std::time::Instant::now();
         if let Some(e) = buffer.present().err() {
             println!("[fresco-game] present failed: {e}");
         }
+        self.present_us = present_start.elapsed().as_micros();
         self.surface = Some(sb_surface);
 
         // Observability + pacing bookkeeping.
@@ -185,10 +191,11 @@ impl GameApp {
         }
         if self.frame.is_multiple_of(120) {
             println!(
-                "[fresco-game] frame {} fps {:.1} paint {}us balls {}",
+                "[fresco-game] frame {} fps {:.1} paint {}us present {}us balls {}",
                 self.frame,
                 self.fps,
                 paint_us,
+                self.present_us,
                 self.screen.entity_count()
             );
         }
@@ -221,7 +228,11 @@ impl ApplicationHandler for GameApp {
                 std::thread::spawn(move || {
                     loop {
                         ticker_window.request_redraw();
-                        std::thread::sleep(std::time::Duration::from_millis(8));
+                        // 2 ms: the redraw cadence must sit well under
+                        // the frame budget, or the ticker - not the
+                        // frame work - caps the fps (8 ms gave 33 fps
+                        // with 11 ms of real work per frame).
+                        std::thread::sleep(std::time::Duration::from_millis(2));
                     }
                 });
                 match softbuffer::Context::new(window.clone()) {
