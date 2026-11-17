@@ -19,6 +19,7 @@
 #![forbid(unsafe_code)]
 
 pub mod backend;
+pub mod blit;
 pub mod clock;
 pub mod event;
 pub mod input;

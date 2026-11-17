@@ -16,6 +16,7 @@ winit = ["dep:winit", "dep:softbuffer"]
 
 [dependencies]
 path-kit = { workspace = true }
+paint-kit = { workspace = true }
 scene-kit = { workspace = true }
 winit = { version = "0.30", optional = true }
 softbuffer = { version = "0.4", optional = true }

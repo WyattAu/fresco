@@ -142,28 +142,11 @@ impl GameApp {
             self.surface = Some(sb_surface);
             return;
         };
-        let data = self.scene_surface.as_ref().map(|s| s.data()).unwrap_or(&[]);
-        let lw = wu as f64 / scale;
-        let lh = hu as f64 / scale;
-        let bwidth = sw as f64;
-        let bheight = sh as f64;
-        let total = (sw as usize).saturating_mul(sh as usize);
-        for k in 0..total {
-            let col = (k % sw as usize) as f64;
-            let row = (k / sw as usize) as f64;
-            // Physical -> logical (nearest neighbor).
-            let sx = (col * lw / bwidth).floor().max(0.0) as usize;
-            let sy = (row * lh / bheight).floor().max(0.0) as usize;
-            let base = (sy.min(lhu - 1) * lwu + sx.min(lwu - 1)) * 4;
-            let Some(q) = data.get(base..base + 4) else {
-                break;
-            };
-            let Ok([r, g, b, a]) = <[u8; 4]>::try_from(q) else {
-                break;
-            };
-            if let Some(px) = buffer.get_mut(k) {
-                *px = u32::from(a) << 24 | u32::from(b) << 16 | u32::from(g) << 8 | u32::from(r);
-            }
+        // Blit via the shared window-kit helper: integer scales take
+        // the expand + row-repeat fast path (memcpy per row), other
+        // scales fall back to per-pixel nearest-neighbor.
+        if let Some(scene) = self.scene_surface.as_ref() {
+            window_kit::blit::blit_upscaled(scene, &mut buffer, sw as usize, sh as usize);
         }
         if let Some(e) = buffer.present().err() {
             println!("[fresco-game] present failed: {e}");
