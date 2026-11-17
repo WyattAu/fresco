@@ -367,6 +367,20 @@ impl Painter {
             .x1
             .ceil()
             .min(f64::from(u32::try_from(w).unwrap_or(u32::MAX)))) as usize;
+        // Fast path: pixel-aligned solid fill. Every pixel in the
+        // clipped integer range has coverage exactly 1.0, so the
+        // blend is a constant-color over - identical bytes, no cov
+        // buffer, no per-pixel fraction math.
+        if let Paint::Solid(solid) = paint {
+            let aligned = f64::from(u32::try_from(x0).unwrap_or(u32::MAX)) == clip.x0
+                && f64::from(u32::try_from(y0).unwrap_or(u32::MAX)) == clip.y0
+                && f64::from(u32::try_from(x1.min(w)).unwrap_or(u32::MAX)) == clip.x1
+                && f64::from(u32::try_from(y1.min(h)).unwrap_or(u32::MAX)) == clip.y1;
+            if aligned {
+                surface.blend_rect_solid(x0, y0, x1.min(w), y1.min(h), solid.color);
+                return;
+            }
+        }
         for row in y0..y1.min(h) {
             let ry0 = f64::from(u32::try_from(row).unwrap_or(u32::MAX));
             let ry1 = ry0 + 1.0;

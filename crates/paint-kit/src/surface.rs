@@ -184,6 +184,45 @@ impl Surface {
         }
     }
 
+    /// Blend a constant premultiplied color over a pixel-aligned
+    /// rect. Coverage is exactly 1.0 on every pixel, so this produces
+    /// the same bytes as blending coverage-1.0 rows through
+    /// [`Self::blend_row_with`] with a constant source - without the
+    /// per-pixel coverage math (full-motion apps repaint the whole
+    /// background every frame; this is their hot path).
+    pub fn blend_rect_solid(&mut self, x0: usize, y0: usize, x1: usize, y1: usize, color: [u8; 4]) {
+        let a_eff = i64::from(color[3]);
+        if a_eff == 0 {
+            return;
+        }
+        let inv = 255 - a_eff;
+        let cols = x1.min(self.width).saturating_sub(x0);
+        if cols == 0 {
+            return;
+        }
+        for y in y0..y1.min(self.height) {
+            let row_start = y * self.stride;
+            let end = (row_start + self.width * 4).min(self.data.len());
+            let Some(row) = self.data.get_mut(row_start..end) else {
+                continue;
+            };
+            for chunk in row.as_chunks_mut::<4>().0.iter_mut().skip(x0).take(cols) {
+                let mut out = [0_u8; 4];
+                for (k, pair) in chunk.iter().zip(color).enumerate() {
+                    let (dst, src) = pair;
+                    let src_eff = if k == 3 { a_eff } else { i64::from(src) };
+                    let v = (src_eff * 255 + i64::from(*dst) * inv + 127) / 255;
+                    if let Some(slot) = out.get_mut(k) {
+                        *slot = v.min(255) as u8;
+                    }
+                }
+                for (slot, v) in chunk.iter_mut().zip(out) {
+                    *slot = v;
+                }
+            }
+        }
+    }
+
     /// Blend with a per-pixel source (gradients, images). The source
     /// receives the pixel column and returns a premultiplied color whose
     /// alpha is already coverage-multiplied.

@@ -171,17 +171,33 @@ pub fn rasterize_polys(
         return;
     }
     let height_f = f64::from(u32::try_from(height).unwrap_or(u32::MAX));
-    let mut events: Vec<f64> = Vec::with_capacity(edges.len() * 2 + height + 2);
+    // Polygon y-span: band iteration clamps to it. Without this, the
+    // event walk covers every surface row and runs the per-edge
+    // activity scan (with x_at divisions) on all of them - a 16 px
+    // ball on a 740 px surface paid ~43x wasted band work.
+    let mut span_lo = f64::INFINITY;
+    let mut span_hi = f64::NEG_INFINITY;
+    for e in edges {
+        span_lo = span_lo.min(e.ya.min(e.yb));
+        span_hi = span_hi.max(e.ya.max(e.yb));
+    }
+    let lo = span_lo.floor().max(0.0);
+    let hi = span_hi.ceil().min(height_f);
+    let mut events: Vec<f64> = Vec::with_capacity(edges.len() * 2 + 16);
     // Every integer row boundary is an event so a band never spans two
     // pixel rows: each band's integral lands in exactly one row.
-    for r in 0..=height {
-        events.push(f64::from(u32::try_from(r).unwrap_or(u32::MAX)));
+    let first_row = lo.ceil();
+    let last_row = hi.floor();
+    let mut r = first_row;
+    while r <= last_row + 1.0 {
+        events.push(r.min(height_f));
+        r += 1.0;
     }
     for e in edges {
-        if e.ya > 0.0 && e.ya < height_f {
+        if e.ya > lo && e.ya < hi {
             events.push(e.ya);
         }
-        if e.yb > 0.0 && e.yb < height_f {
+        if e.yb > lo && e.yb < hi {
             events.push(e.yb);
         }
     }

@@ -13,31 +13,21 @@ fn main() {
     let mut game = fresco_game::game::GameScreen::new();
     game.resize(360, 740);
     game.pointer_down(180.0, 300.0);
+    let mut sim_us = 0u128;
+    let mut paint_us_total = 0u128;
     for _k in 0..frames {
-        let paint_start = std::time::Instant::now();
+        let t0 = std::time::Instant::now();
         game.step();
-        if _k % 15 == 0 {
-            let c = game.ball_centers();
-            if let (Some(first), Some(last)) = (c.first(), c.last()) {
-                println!(
-                    "[probe] f{}=({:.1},{:.1}) bot=({:.1},{:.1})",
-                    _k, first.0, first.1, last.0, last.1
-                );
-            }
-        }
+        sim_us += t0.elapsed().as_micros();
+        let t1 = std::time::Instant::now();
         game.paint(&mut surface, &mut painter);
-        let paint_us = paint_start.elapsed().as_micros() as u64;
-        inspector.record_frame(
-            surface.data(),
-            surface.width(),
-            surface.height(),
-            paint_us,
-            0,
-        );
+        paint_us_total += t1.elapsed().as_micros();
+        inspector.record_frame(surface.data(), surface.width(), surface.height(), 0, 0);
     }
-    for (k, (x, y)) in game.ball_centers().iter().enumerate().take(6) {
-        println!("[probe] ball {k}: x={x:.1} y={y:.1}");
-    }
+    println!(
+        "[profile] sim {sim_us}us paint {paint_us_total}us over {frames}f = {}us/frame paint",
+        paint_us_total / u128::try_from(frames.max(1)).unwrap_or(1)
+    );
     let analysis = inspector.analyze();
     println!("{analysis}");
     println!(
