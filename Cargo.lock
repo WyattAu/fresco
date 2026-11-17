@@ -719,6 +719,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "fresco-game"
+version = "0.8.7"
+dependencies = [
+ "android-activity",
+ "ecs-kit",
+ "paint-kit",
+ "path-kit",
+ "phys-kit",
+ "softbuffer",
+ "widget-kit",
+ "window-kit",
+ "winit",
+]
+
+[[package]]
 name = "futures-core"
 version = "0.3.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"

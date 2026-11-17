@@ -1,0 +1,491 @@
+//! The game: an ECS-driven ball fountain with physics walls, tap
+//! bursts, and a widget HUD.
+//!
+//! Demonstrates the Phase B integration contract: [`ecs_kit::World`]
+//! owns game entities, [`phys_kit`] drives dynamics (Verlet particles,
+//! inelastic wall contact, ball-ball impulse resolution), widget-kit
+//! paints the HUD, and the whole sim is deterministic under a fixed
+//! timestep (same inputs, same bytes - asserted by the oracle tests).
+//!
+//! Rendering is CPU paint-kit: solid background, balls as round-rect
+//! circles (radius = half the box edge), HUD through the widget-kit
+//! realfont label path.
+
+use ecs_kit::{Entity, World};
+use path_kit::Vec2;
+use phys_kit::Particle;
+use phys_kit::collision::StaticBox;
+use widget_kit::WidgetColors;
+
+/// Fixed simulation step (seconds). The render loop accumulates wall
+/// time and drains it in whole steps, so the sim is frame-rate
+/// independent and reproducible.
+const DT: f64 = 1.0 / 60.0;
+
+/// Wall band thickness: solid boxes straddle the viewport edge by
+/// this much on the inside; `resolve_particle_box` ejects through the
+/// nearest face, which is always the inward one.
+const WALL: f64 = 10.0;
+
+/// Gravity in logical px/s^2 (screen y-down: positive pulls down).
+const GRAVITY: f64 = 900.0;
+
+/// Ball radius in logical px.
+const BALL_RADIUS: f64 = 8.0;
+
+/// Lifetime cap per ball, in sim frames (5 s at 60 Hz).
+const TTL_FRAMES: u64 = 300;
+
+/// Hard entity cap: past this, the oldest balls despawn first. Bounds
+/// the ball-ball collision pass to a fixed O(n^2) budget.
+const MAX_BALLS: usize = 96;
+
+/// Fountain cadence: one spawned ball every N sim frames.
+const FOUNTAIN_EVERY: u64 = 15;
+
+/// Tap burst size.
+const BURST: usize = 8;
+
+/// Deterministic palette, distinct in lightness (readable under CVD
+/// simulation and on the dark background).
+const PALETTE: [[u8; 4]; 6] = [
+    [120, 170, 255, 255],
+    [140, 220, 160, 255],
+    [255, 200, 120, 255],
+    [220, 140, 200, 255],
+    [160, 220, 220, 255],
+    [230, 230, 160, 255],
+];
+
+/// ECS components: physics state, render geometry, spawn metadata.
+/// BTreeMap-backed storages keep iteration order deterministic.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Ball(Particle);
+
+#[derive(Clone, Copy, Debug)]
+struct Radius(f64);
+
+#[derive(Clone, Copy, Debug)]
+struct Tint([u8; 4]);
+
+#[derive(Clone, Copy, Debug)]
+struct Born(u64);
+
+/// The game screen: ECS world, walls, sim clock, input.
+pub struct GameScreen {
+    world: World,
+    walls: [StaticBox; 4],
+    width: f64,
+    height: f64,
+    /// Accumulated wall time not yet consumed by sim steps.
+    acc: f64,
+    /// Whole sim frames stepped since construction.
+    sim_frame: u64,
+    last_paint: Option<std::time::Instant>,
+}
+
+impl Default for GameScreen {
+    fn default() -> Self {
+        GameScreen::new()
+    }
+}
+
+impl GameScreen {
+    /// New game with empty world and degenerate viewport until the
+    /// first resize.
+    #[must_use]
+    pub fn new() -> Self {
+        GameScreen {
+            world: World::new(),
+            walls: [StaticBox::new(Vec2::ZERO, Vec2::ZERO); 4],
+            width: 0.0,
+            height: 0.0,
+            acc: 0.0,
+            sim_frame: 0,
+            last_paint: None,
+        }
+    }
+
+    /// Resize the viewport and rebuild the walls. Balls outside the
+    /// new bounds are clamped inside on the next step.
+    pub fn resize(&mut self, width: usize, height: usize) {
+        self.width = f64::from(u32::try_from(width.max(1)).unwrap_or(1));
+        self.height = f64::from(u32::try_from(height.max(1)).unwrap_or(1));
+        let (w, h) = (self.width, self.height);
+        self.walls = [
+            // Left: straddles x = WALL.
+            StaticBox::new(Vec2::new(-20.0, -20.0), Vec2::new(WALL, h + 20.0)),
+            // Right.
+            StaticBox::new(Vec2::new(w - WALL, -20.0), Vec2::new(w + 20.0, h + 20.0)),
+            // Top.
+            StaticBox::new(Vec2::new(-20.0, -20.0), Vec2::new(w + 20.0, WALL)),
+            // Bottom.
+            StaticBox::new(Vec2::new(-20.0, h - WALL), Vec2::new(w + 20.0, h + 20.0)),
+        ];
+    }
+
+    /// Tap: spawn a deterministic burst of balls scattered around
+    /// `(x, y)` (spatial spread, not a coincident stack: PBD towers
+    /// form when balls share a spawn point).
+    pub fn pointer_down(&mut self, x: f64, y: f64) {
+        let seed = self.sim_frame;
+        for k in 0..BURST {
+            let ku = u64::try_from(k).unwrap_or(0);
+            let u = phys_kit::particles::hash_unit(seed.wrapping_add(ku * 7 + 1));
+            let v = phys_kit::particles::hash_unit(seed.wrapping_add(ku * 13 + 5));
+            let speed = 120.0 + 260.0 * u;
+            let ang = std::f64::consts::TAU * v;
+            let vel = Vec2::new(ang.cos() * speed, ang.sin() * speed - 160.0);
+            // Spread spawn points over a 48 px cross so balls never
+            // share a position (degenerate contacts at zero distance
+            // have no separation direction).
+            let dx = (f64::from(u32::try_from(k).unwrap_or(0)) - 3.5) * 12.0;
+            let dy = (f64::from(u32::try_from(k % 3).unwrap_or(0)) - 1.0) * 14.0;
+            let pos = Vec2::new(
+                (x + dx).clamp(WALL + BALL_RADIUS, self.width - WALL - BALL_RADIUS),
+                (y + dy).clamp(WALL + BALL_RADIUS, self.height - WALL - BALL_RADIUS),
+            );
+            self.spawn(pos, vel);
+        }
+    }
+
+    /// Tap release: no-op (bursts fire on press).
+    pub fn pointer_up(&mut self, _x: f64, _y: f64) {}
+
+    /// Spawn one ball with `vel` (px/s) at `pos`.
+    fn spawn(&mut self, pos: Vec2, vel: Vec2) {
+        let entity = self.world.spawn();
+        let mut particle = Particle::free(pos, 1.0);
+        // Verlet velocity: prev sits one step back along -vel.
+        particle.prev = Vec2::new(pos.x - vel.x * DT, pos.y - vel.y * DT);
+        self.world.add(entity, Ball(particle));
+        self.world.add(entity, Radius(BALL_RADIUS));
+        let pick = usize::try_from(
+            self.sim_frame
+                .wrapping_mul(2654435761)
+                .checked_shr(13)
+                .unwrap_or(0)
+                % 6,
+        )
+        .unwrap_or(0);
+        let tint = PALETTE.get(pick).copied().unwrap_or([120, 170, 255, 255]);
+        self.world.add(entity, Tint(tint));
+        self.world.add(entity, Born(self.sim_frame));
+    }
+
+    /// Despawn the oldest ball (smallest `Born`, ties broken by the
+    /// ECS iteration order, which is deterministic).
+    fn despawn_oldest(&mut self) {
+        let mut oldest: Option<(Entity, u64)> = None;
+        for (entity, born) in self.world.query::<Born>() {
+            match oldest {
+                Some((_, b)) if born.0 >= b => {}
+                _ => oldest = Some((entity, born.0)),
+            }
+        }
+        if let Some((entity, _)) = oldest {
+            self.world.despawn(entity);
+        }
+    }
+
+    /// One fixed sim step: fountain, gravity, wall + ball contacts,
+    /// TTL reap, entity cap.
+    pub fn step(&mut self) {
+        self.sim_frame = self.sim_frame.wrapping_add(1);
+
+        // Fountain: a steady deterministic stream so pacing evidence
+        // always has moving targets.
+        if self.sim_frame.is_multiple_of(FOUNTAIN_EVERY) {
+            let u = phys_kit::particles::hash_unit(self.sim_frame);
+            let v = phys_kit::particles::hash_unit(self.sim_frame.wrapping_add(3));
+            let w = phys_kit::particles::hash_unit(self.sim_frame.wrapping_add(17));
+            let speed = 380.0 + 240.0 * u;
+            let vx = (v - 0.5) * 320.0;
+            // Jitter the launch point across the bottom third so
+            // successive spawns do not stack into a single column.
+            let px = self.width * (0.3 + 0.4 * w);
+            let pos = Vec2::new(
+                px.clamp(WALL + BALL_RADIUS, self.width - WALL - BALL_RADIUS),
+                self.height - WALL - BALL_RADIUS,
+            );
+            self.spawn(pos, Vec2::new(vx, -speed));
+        }
+
+        // Gravity (Verlet: shift pos, velocity stays implicit).
+        let g_dt2 = GRAVITY * DT * DT;
+        let touched: Vec<Entity> = self.world.query::<Ball>().map(|(e, _)| e).collect();
+        for entity in &touched {
+            if let Some(ball) = self.world.get_mut::<Ball>(*entity) {
+                let p = ball.0.pos;
+                ball.0.pos = Vec2::new(p.x, p.y + g_dt2);
+            }
+        }
+
+        // Walls.
+        let walls = self.walls;
+        for entity in &touched {
+            if let Some(ball) = self.world.get_mut::<Ball>(*entity) {
+                for wall in &walls {
+                    let _ = phys_kit::collision::StaticBox::resolve_particle_box(&mut ball.0, wall);
+                }
+            }
+        }
+
+        // Ball-ball impulses (pairwise, deterministic order).
+        let ids: Vec<Entity> = touched.clone();
+        for (ia, &ea) in ids.iter().enumerate() {
+            for &eb in ids.iter().skip(ia + 1) {
+                let ra = self.world.get::<Radius>(ea).map(|r| r.0);
+                let rb = self.world.get::<Radius>(eb).map(|r| r.0);
+                if let (Some(ra), Some(rb)) = (ra, rb) {
+                    // Distinct entities, but one storage: resolve on
+                    // copies, write back sequentially.
+                    let pa = self.world.get::<Ball>(ea).map(|b| b.0);
+                    let pb = self.world.get::<Ball>(eb).map(|b| b.0);
+                    if let (Some(mut pa), Some(mut pb)) = (pa, pb)
+                        && phys_kit::collision::Circle::resolve_circle_circle(
+                            &mut pa, ra, &mut pb, rb,
+                        )
+                    {
+                        if let Some(ball) = self.world.get_mut::<Ball>(ea) {
+                            ball.0 = pa;
+                        }
+                        if let Some(ball) = self.world.get_mut::<Ball>(eb) {
+                            ball.0 = pb;
+                        }
+                    }
+                }
+            }
+        }
+
+        // World pass LAST: ball-ball writeback can push pairs back
+        // into the wall band, so walls resolve again after contacts
+        // (integrate -> object-object -> object-world).
+        let walls = self.walls;
+        for entity in &touched {
+            if let Some(ball) = self.world.get_mut::<Ball>(*entity) {
+                for wall in &walls {
+                    let _ = phys_kit::collision::StaticBox::resolve_particle_box(&mut ball.0, wall);
+                }
+            }
+        }
+        // TTL reap + entity cap.
+        let frame = self.sim_frame;
+        let expired: Vec<Entity> = self
+            .world
+            .query::<Born>()
+            .filter(|(_, b)| frame.saturating_sub(b.0) > TTL_FRAMES)
+            .map(|(e, _)| e)
+            .collect();
+        for entity in expired {
+            let _ = self.world.despawn(entity);
+        }
+        while self.world.entity_count() > MAX_BALLS {
+            self.despawn_oldest();
+        }
+    }
+
+    /// Drain accumulated wall time in fixed steps (capped so a stalled
+    /// renderer cannot spiral the sim).
+    pub fn step_wall_time(&mut self, now: std::time::Instant) {
+        let dt = match self.last_paint {
+            Some(last) => now.duration_since(last).as_secs_f64().min(0.05),
+            None => 0.0,
+        };
+        self.last_paint = Some(now);
+        self.acc += dt;
+        let mut steps = 0;
+        while self.acc >= DT && steps < 4 {
+            self.step();
+            self.acc -= DT;
+            steps += 1;
+        }
+        if steps == 4 {
+            // Renderer stalled: drop the backlog instead of sprinting.
+            self.acc = 0.0;
+        }
+    }
+
+    /// Paint one frame: background, balls, HUD.
+    pub fn paint(&mut self, surface: &mut paint_kit::Surface, painter: &mut paint_kit::Painter) {
+        // Background.
+        painter.fill_rect(
+            surface,
+            paint_kit::Rect::from_size(Vec2::ZERO, Vec2::new(self.width, self.height)),
+            &paint_kit::Paint::from(paint_kit::Solid::premul([16, 18, 24, 255])),
+        );
+
+        // Balls (round-rect with radius = half edge = circle).
+        let balls: Vec<(Ball, Radius, Tint)> = self
+            .world
+            .query2::<Ball, Radius>()
+            .into_iter()
+            .filter_map(|(e, (b, r))| {
+                let tint = self.world.get::<Tint>(e).map(|t| t.0)?;
+                Some((*b, *r, Tint(tint)))
+            })
+            .collect();
+        for (ball, radius, tint) in &balls {
+            let r = radius.0;
+            let side = r * 2.0;
+            painter.fill_round_rect(
+                surface,
+                paint_kit::Rect::from_size(
+                    Vec2::new(ball.0.pos.x - r, ball.0.pos.y - r),
+                    Vec2::new(side, side),
+                ),
+                r,
+                &paint_kit::Paint::from(paint_kit::Solid::premul(tint.0)),
+            );
+        }
+
+        // HUD through the widget-kit realfont label path.
+        let mut hud = widget_kit::DrawListPainter {
+            surface,
+            painter,
+            colors: WidgetColors::default(),
+        };
+        let balls_n = self.world.entity_count();
+        widget_kit::WidgetRenderer::label_text(
+            &mut hud,
+            widget_kit::Rect2D {
+                x: 8.0,
+                y: 4.0,
+                width: self.width - 16.0,
+                height: 20.0,
+            },
+            &format!("fresco game  balls {balls_n}  sim {}", self.sim_frame),
+            14.0,
+            [220, 224, 232, 255],
+        );
+        widget_kit::WidgetRenderer::label_text(
+            &mut hud,
+            widget_kit::Rect2D {
+                x: 8.0,
+                y: 26.0,
+                width: self.width - 16.0,
+                height: 18.0,
+            },
+            "tap = burst  fountain 4/s  ttl 5s",
+            12.0,
+            [150, 156, 170, 255],
+        );
+    }
+
+    /// Alive entity count (HUD + oracle use).
+    #[must_use]
+    pub fn entity_count(&self) -> usize {
+        self.world.entity_count()
+    }
+
+    /// Ball centers, sorted, for determinism oracles.
+    #[must_use]
+    pub fn ball_centers(&self) -> Vec<(f64, f64)> {
+        let mut out: Vec<(f64, f64)> = self
+            .world
+            .query::<Ball>()
+            .map(|(_, b)| (b.0.pos.x, b.0.pos.y))
+            .collect();
+        out.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.total_cmp(&b.1)));
+        out
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Oracle: after a tap burst and a second of sim, every ball sits
+    /// inside the wall band (gravity + contacts never tunnel).
+    #[test]
+    fn balls_stay_inside_walls() {
+        let mut game = GameScreen::new();
+        game.resize(360, 740);
+        game.pointer_down(180.0, 200.0);
+        for _ in 0..60 {
+            game.step();
+        }
+        let (w, h) = (game.width, game.height);
+        for (x, y) in game.ball_centers() {
+            assert!(x >= WALL, "ball x {x} through the left wall");
+            assert!(x <= w - WALL, "ball x {x} through the right wall");
+            assert!(y >= WALL, "ball y {y} through the top wall");
+            assert!(y <= h - WALL, "ball y {y} through the floor");
+        }
+    }
+
+    /// Oracle: the entity cap holds under sustained fountain + bursts.
+    #[test]
+    fn fountain_caps_entity_count() {
+        let mut game = GameScreen::new();
+        game.resize(360, 740);
+        for frame in 0u64..900 {
+            if frame.is_multiple_of(45) {
+                game.pointer_down(90.0, 300.0);
+            }
+            game.step();
+        }
+        assert!(
+            game.entity_count() <= MAX_BALLS,
+            "cap breached: {}",
+            game.entity_count()
+        );
+    }
+
+    /// Oracle: same inputs, same bytes - the sim is deterministic.
+    #[test]
+    fn sim_is_deterministic() {
+        let run = || {
+            let mut game = GameScreen::new();
+            game.resize(360, 740);
+            for frame in 0..120 {
+                if frame == 30 {
+                    game.pointer_down(200.0, 150.0);
+                }
+                game.step();
+            }
+            game.ball_centers()
+        };
+        let a = run();
+        let b = run();
+        assert_eq!(a, b, "same inputs must produce identical sim state");
+    }
+
+    /// Oracle: a tap spawns exactly BURST balls.
+    #[test]
+    fn tap_spawns_burst() {
+        let mut game = GameScreen::new();
+        game.resize(360, 740);
+        let before = game.entity_count();
+        game.pointer_down(180.0, 300.0);
+        assert_eq!(game.entity_count(), before + BURST, "tap spawns BURST");
+    }
+
+    /// Oracle: TTL reaps - burst balls vanish after their lifetime.
+    /// Compared against a tap-free twin run so fountain cadence does
+    /// not leak into the assertion.
+    #[test]
+    fn ttl_despawns_expired_balls() {
+        let mut base = GameScreen::new();
+        base.resize(360, 740);
+        let mut game = GameScreen::new();
+        game.resize(360, 740);
+        for _ in 0..600 {
+            base.step();
+            game.step();
+        }
+        let steady = base.entity_count();
+        game.pointer_down(180.0, 300.0);
+        let spiked = game.entity_count();
+        assert!(spiked > steady, "burst must add balls");
+        for _ in 0..(TTL_FRAMES + 10) {
+            base.step();
+            game.step();
+        }
+        assert_eq!(
+            game.entity_count(),
+            base.entity_count(),
+            "burst balls must TTL back to the fountain-only state"
+        );
+    }
+}
