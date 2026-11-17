@@ -189,6 +189,21 @@ impl ShowcaseApp {
         }
         self.last_frame_at = Some(now);
         self.frame += 1;
+        // File-based pacing row: `frame,paint_us,fps_milli`. Flushed
+        // per row - the widget screen repaints sparsely (once per
+        // input event), and an unflushed buffer would be lost to a
+        // Freecess freeze or process kill.
+        if let Some(pf) = self.pacing_file.as_mut() {
+            use std::io::Write;
+            let row = format!(
+                "{},{},{}\n",
+                self.frame,
+                paint_us,
+                u64::try_from((self.fps * 1000.0) as i64).unwrap_or(0)
+            );
+            let _ = pf.write_all(row.as_bytes());
+            let _ = pf.flush();
+        }
         if self.frame.is_multiple_of(120) {
             println!(
                 "[fresco] frame {} fps {:.1} paint {}us",
