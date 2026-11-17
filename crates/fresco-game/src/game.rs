@@ -11,6 +11,7 @@
 //! circles (radius = half the box edge), HUD through the widget-kit
 //! realfont label path.
 
+use crate::atlas::tile_color;
 use ecs_kit::{Entity, World};
 use path_kit::Vec2;
 use phys_kit::Particle;
@@ -46,16 +47,8 @@ const FOUNTAIN_EVERY: u64 = 15;
 /// Tap burst size.
 const BURST: usize = 8;
 
-/// Deterministic palette, distinct in lightness (readable under CVD
-/// simulation and on the dark background).
-const PALETTE: [[u8; 4]; 6] = [
-    [120, 170, 255, 255],
-    [140, 220, 160, 255],
-    [255, 200, 120, 255],
-    [220, 140, 200, 255],
-    [160, 220, 220, 255],
-    [230, 230, 160, 255],
-];
+/// Atlas sprite names, indexed by `Tile` (6 = player).
+const TILE_NAMES: [&str; 6] = ["ball0", "ball1", "ball2", "ball3", "ball4", "ball5"];
 
 /// ECS components: physics state, render geometry, spawn metadata.
 /// BTreeMap-backed storages keep iteration order deterministic.
@@ -65,8 +58,14 @@ struct Ball(Particle);
 #[derive(Clone, Copy, Debug)]
 struct Radius(f64);
 
+/// Atlas tile index for the sprite draw.
 #[derive(Clone, Copy, Debug)]
-struct Tint([u8; 4]);
+struct Tile(u8);
+
+/// The grabbed ball: follows the pointer while held (inv_mass 0),
+/// released with the movement's implicit velocity.
+#[derive(Clone, Copy, Debug)]
+struct Grabbed;
 
 #[derive(Clone, Copy, Debug)]
 struct Born(u64);
@@ -74,6 +73,7 @@ struct Born(u64);
 /// The game screen: ECS world, walls, sim clock, input.
 pub struct GameScreen {
     world: World,
+    atlas: Option<paint_kit::atlas::SpriteAtlas>,
     walls: [StaticBox; 4],
     width: f64,
     height: f64,
@@ -82,6 +82,8 @@ pub struct GameScreen {
     /// Whole sim frames stepped since construction.
     sim_frame: u64,
     last_paint: Option<std::time::Instant>,
+    /// Last pointer position while a grab is active.
+    last_pointer: Option<(f64, f64)>,
 }
 
 impl Default for GameScreen {
@@ -97,12 +99,14 @@ impl GameScreen {
     pub fn new() -> Self {
         GameScreen {
             world: World::new(),
+            atlas: crate::atlas::game_atlas(),
             walls: [StaticBox::new(Vec2::ZERO, Vec2::ZERO); 4],
             width: 0.0,
             height: 0.0,
             acc: 0.0,
             sim_frame: 0,
             last_paint: None,
+            last_pointer: None,
         }
     }
 
@@ -126,7 +130,8 @@ impl GameScreen {
 
     /// Tap: spawn a deterministic burst of balls scattered around
     /// `(x, y)` (spatial spread, not a coincident stack: PBD towers
-    /// form when balls share a spawn point).
+    /// form when balls share a spawn point), then grab a kinematic
+    /// player ball that follows the pointer until release.
     pub fn pointer_down(&mut self, x: f64, y: f64) {
         let seed = self.sim_frame;
         for k in 0..BURST {
@@ -147,10 +152,57 @@ impl GameScreen {
             );
             self.spawn(pos, vel);
         }
+        // Grab: a kinematic player ball follows the pointer until
+        // release (inv_mass 0 - contacts and gravity skip it).
+        let pos = Vec2::new(
+            x.clamp(WALL + BALL_RADIUS, self.width - WALL - BALL_RADIUS),
+            y.clamp(WALL + BALL_RADIUS, self.height - WALL - BALL_RADIUS),
+        );
+        let player = self.world.spawn();
+        let mut particle = Particle::free(pos, 1.0);
+        particle.inv_mass = 0.0;
+        self.world.add(player, Ball(particle));
+        self.world.add(player, Radius(BALL_RADIUS));
+        self.world.add(player, Tile(6));
+        self.world.add(player, Born(self.sim_frame));
+        self.world.add(player, Grabbed);
+        self.last_pointer = Some((pos.x, pos.y));
     }
 
-    /// Tap release: no-op (bursts fire on press).
-    pub fn pointer_up(&mut self, _x: f64, _y: f64) {}
+    /// Pointer move while a grab is active: carry the player ball.
+    /// The position delta becomes its implicit Verlet velocity, so a
+    /// release flings naturally.
+    pub fn pointer_move(&mut self, x: f64, y: f64) {
+        let Some((lx, ly)) = self.last_pointer else {
+            return;
+        };
+        let pos = Vec2::new(
+            x.clamp(WALL + BALL_RADIUS, self.width - WALL - BALL_RADIUS),
+            y.clamp(WALL + BALL_RADIUS, self.height - WALL - BALL_RADIUS),
+        );
+        let grabbed: Vec<Entity> = self.world.query::<Grabbed>().map(|(e, _)| e).collect();
+        for entity in &grabbed {
+            if let Some(ball) = self.world.get_mut::<Ball>(*entity) {
+                let delta = Vec2::new(pos.x - lx, pos.y - ly);
+                ball.0.pos = pos;
+                ball.0.prev = Vec2::new(pos.x - delta.x, pos.y - delta.y);
+            }
+        }
+        self.last_pointer = Some((pos.x, pos.y));
+    }
+
+    /// Pointer release: un-grab - the ball rejoins the simulation
+    /// with the pointer movement's velocity (fling).
+    pub fn pointer_up(&mut self, _x: f64, _y: f64) {
+        let grabbed: Vec<Entity> = self.world.query::<Grabbed>().map(|(e, _)| e).collect();
+        for entity in &grabbed {
+            if let Some(ball) = self.world.get_mut::<Ball>(*entity) {
+                ball.0.inv_mass = 1.0;
+            }
+            let _ = self.world.remove::<Grabbed>(*entity);
+        }
+        self.last_pointer = None;
+    }
 
     /// Spawn one ball with `vel` (px/s) at `pos`.
     fn spawn(&mut self, pos: Vec2, vel: Vec2) {
@@ -168,8 +220,8 @@ impl GameScreen {
                 % 6,
         )
         .unwrap_or(0);
-        let tint = PALETTE.get(pick).copied().unwrap_or([120, 170, 255, 255]);
-        self.world.add(entity, Tint(tint));
+        let tile = u8::try_from(pick).unwrap_or(0);
+        self.world.add(entity, Tile(tile));
         self.world.add(entity, Born(self.sim_frame));
     }
 
@@ -216,6 +268,9 @@ impl GameScreen {
         let touched: Vec<Entity> = self.world.query::<Ball>().map(|(e, _)| e).collect();
         for entity in &touched {
             if let Some(ball) = self.world.get_mut::<Ball>(*entity) {
+                if ball.0.inv_mass <= 0.0 {
+                    continue; // grabbed: pointer-carried, gravity skips
+                }
                 let p = ball.0.pos;
                 ball.0.pos = Vec2::new(p.x, p.y + g_dt2);
             }
@@ -315,28 +370,41 @@ impl GameScreen {
             &paint_kit::Paint::from(paint_kit::Solid::premul([16, 18, 24, 255])),
         );
 
-        // Balls (round-rect with radius = half edge = circle).
-        let balls: Vec<(Ball, Radius, Tint)> = self
+        // Balls: atlas sprites (draw_image_region blit), with the
+        // procedural circle as the no-atlas fallback.
+        let balls: Vec<(Ball, Radius, Tile)> = self
             .world
             .query2::<Ball, Radius>()
             .into_iter()
             .filter_map(|(e, (b, r))| {
-                let tint = self.world.get::<Tint>(e).map(|t| t.0)?;
-                Some((*b, *r, Tint(tint)))
+                let tile = self.world.get::<Tile>(e).map(|t| t.0)?;
+                Some((*b, *r, Tile(tile)))
             })
             .collect();
-        for (ball, radius, tint) in &balls {
+        for (ball, radius, tile) in &balls {
             let r = radius.0;
             let side = r * 2.0;
-            painter.fill_round_rect(
-                surface,
-                paint_kit::Rect::from_size(
-                    Vec2::new(ball.0.pos.x - r, ball.0.pos.y - r),
-                    Vec2::new(side, side),
-                ),
-                r,
-                &paint_kit::Paint::from(paint_kit::Solid::premul(tint.0)),
+            let dst = paint_kit::Rect::from_size(
+                Vec2::new(ball.0.pos.x - r, ball.0.pos.y - r),
+                Vec2::new(side, side),
             );
+            let name = match tile.0 {
+                6 => "player",
+                i => TILE_NAMES
+                    .get(usize::from(i) % TILE_NAMES.len())
+                    .copied()
+                    .unwrap_or("ball0"),
+            };
+            if let Some(atlas) = self.atlas.as_ref() {
+                atlas.draw(painter, surface, name, dst);
+            } else {
+                painter.fill_round_rect(
+                    surface,
+                    dst,
+                    r,
+                    &paint_kit::Paint::from(paint_kit::Solid::premul(tile_color(tile.0))),
+                );
+            }
         }
 
         // HUD through the widget-kit realfont label path.
@@ -366,7 +434,7 @@ impl GameScreen {
                 width: self.width - 16.0,
                 height: 18.0,
             },
-            "tap = burst  fountain 4/s  ttl 5s",
+            "tap = burst + grab  drag = fling",
             12.0,
             [150, 156, 170, 255],
         );
@@ -451,14 +519,53 @@ mod tests {
         assert_eq!(a, b, "same inputs must produce identical sim state");
     }
 
-    /// Oracle: a tap spawns exactly BURST balls.
+    /// Oracle: a tap spawns BURST balls plus the grabbed player.
     #[test]
-    fn tap_spawns_burst() {
+    fn tap_spawns_burst_and_player() {
         let mut game = GameScreen::new();
         game.resize(360, 740);
         let before = game.entity_count();
         game.pointer_down(180.0, 300.0);
-        assert_eq!(game.entity_count(), before + BURST, "tap spawns BURST");
+        assert_eq!(
+            game.entity_count(),
+            before + BURST + 1,
+            "tap spawns BURST + player"
+        );
+    }
+
+    /// Oracle: the grabbed player follows the pointer exactly.
+    #[test]
+    fn player_follows_pointer() {
+        let mut game = GameScreen::new();
+        game.resize(360, 740);
+        game.pointer_down(180.0, 300.0);
+        game.pointer_move(120.0, 200.0);
+        game.step();
+        let centers = game.ball_centers();
+        assert!(
+            centers
+                .iter()
+                .any(|&(x, y)| (x - 120.0).abs() < 1.0 && (y - 200.0).abs() < 1.0),
+            "player must sit at the pointer: {centers:?}"
+        );
+    }
+
+    /// Oracle: release restores dynamics - the ball falls under
+    /// gravity after pointer_up.
+    #[test]
+    fn release_restores_dynamics() {
+        let mut game = GameScreen::new();
+        game.resize(360, 740);
+        game.pointer_down(180.0, 150.0);
+        game.pointer_move(180.0, 150.0);
+        game.pointer_up(180.0, 150.0);
+        game.step();
+        let before = game.ball_centers();
+        for _ in 0..20 {
+            game.step();
+        }
+        let after = game.ball_centers();
+        assert_ne!(before, after, "released ball must move under gravity");
     }
 
     /// Oracle: TTL reaps - burst balls vanish after their lifetime.

@@ -10,6 +10,7 @@
 //! directory. The sim itself is deterministic under a fixed timestep;
 //! see the `game` module oracles.
 
+pub mod atlas;
 pub mod game;
 
 use game::GameScreen;
@@ -30,6 +31,9 @@ struct GameApp {
     scene_painter: Option<Painter>,
     screen: GameScreen,
     last_cursor: Option<widget_kit::LogicalAt>,
+    /// Desktop drag state: left button held (touch devices deliver
+    /// Moved touch events instead).
+    mouse_down: bool,
     clock: std::time::Instant,
     frame: u64,
     inspector: Option<Inspector>,
@@ -53,6 +57,7 @@ impl Default for GameApp {
             scene_painter: None,
             screen: GameScreen::new(),
             last_cursor: None,
+            mouse_down: false,
             clock: std::time::Instant::now(),
             frame: 0,
             inspector: None,
@@ -310,17 +315,32 @@ impl ApplicationHandler for GameApp {
                 }
             }
             WindowEvent::CursorMoved { position, .. } => {
-                self.last_cursor = Some(self.pointer_at(position));
+                let at = self.pointer_at(position);
+                self.last_cursor = Some(at);
+                // Drag: carry the grabbed ball while the button is
+                // down (winit MouseInput carries no position - the
+                // fresco-android lesson).
+                if self.mouse_down {
+                    self.screen.pointer_move(at.x, at.y);
+                }
             }
             // Desktop mouse: route press/release through the tracked
             // cursor (winit MouseInput carries no position).
             WindowEvent::MouseInput { state, button, .. } => {
-                if button == winit::event::MouseButton::Left
-                    && let Some(at) = self.last_cursor
-                {
+                if button == winit::event::MouseButton::Left {
                     match state {
-                        winit::event::ElementState::Pressed => self.screen.pointer_down(at.x, at.y),
-                        winit::event::ElementState::Released => self.screen.pointer_up(at.x, at.y),
+                        winit::event::ElementState::Pressed => {
+                            self.mouse_down = true;
+                            if let Some(at) = self.last_cursor {
+                                self.screen.pointer_down(at.x, at.y);
+                            }
+                        }
+                        winit::event::ElementState::Released => {
+                            self.mouse_down = false;
+                            if let Some(at) = self.last_cursor {
+                                self.screen.pointer_up(at.x, at.y);
+                            }
+                        }
                     }
                 }
             }
@@ -332,10 +352,10 @@ impl ApplicationHandler for GameApp {
                 };
                 match touch.phase {
                     winit::event::TouchPhase::Started => self.screen.pointer_down(at.x, at.y),
+                    winit::event::TouchPhase::Moved => self.screen.pointer_move(at.x, at.y),
                     winit::event::TouchPhase::Ended | winit::event::TouchPhase::Cancelled => {
                         self.screen.pointer_up(at.x, at.y)
                     }
-                    _ => {}
                 }
                 if let Some(window) = self.window.clone() {
                     window.request_redraw();
