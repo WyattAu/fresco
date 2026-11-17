@@ -80,9 +80,27 @@ fn player_sprite() -> Option<Image> {
     Image::new(S, S, data)
 }
 
+/// The target marker: amber ring, hollow center.
+fn target_sprite() -> Option<Image> {
+    let mut data = Vec::with_capacity(S * S * 4);
+    for y in 0..S {
+        for x in 0..S {
+            let xf = f64::from(u32::try_from(x).unwrap_or(0)) + 0.5;
+            let yf = f64::from(u32::try_from(y).unwrap_or(0)) + 0.5;
+            let d = ((xf - 16.0).powi(2) + (yf - 16.0).powi(2)).sqrt();
+            if !(R - 6.0..=R).contains(&d) {
+                data.extend_from_slice(&[0, 0, 0, 0]);
+                continue;
+            }
+            data.extend_from_slice(&[255, 170, 60, 255]);
+        }
+    }
+    Image::new(S, S, data)
+}
+
 /// Build the game atlas: "ball0".."ball5" per palette color plus
-/// "player". Returns `None` only on packer overflow (fixed sprite
-/// count in a fixed 128x128 atlas cannot overflow).
+/// "player" and "target". Returns `None` only on packer overflow
+/// (fixed sprite count in a fixed 128x128 atlas cannot overflow).
 #[must_use]
 pub fn game_atlas() -> Option<SpriteAtlas> {
     let mut atlas = SpriteAtlas::new(128, 128)?;
@@ -92,6 +110,8 @@ pub fn game_atlas() -> Option<SpriteAtlas> {
         atlas.pack(&name, &sprite)?;
     }
     atlas.pack("player", &player_sprite()?)?;
+    let target = target_sprite()?;
+    atlas.pack("target", &target)?;
     Some(atlas)
 }
 
@@ -123,7 +143,7 @@ mod tests {
         assert!(a.is_some() && b.is_some(), "atlas build must succeed");
         if let (Some(a), Some(b)) = (a, b) {
             assert_eq!(a.image().data, b.image().data, "atlas bytes differ");
-            assert_eq!(a.sprite_count(), 7, "6 balls + player");
+            assert_eq!(a.sprite_count(), 8, "6 balls + player + target");
         }
     }
 

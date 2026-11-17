@@ -67,6 +67,14 @@ struct Tile(u8);
 #[derive(Clone, Copy, Debug)]
 struct Grabbed;
 
+/// A score target: amber ring popped when a ball touches it.
+#[derive(Clone, Copy, Debug)]
+struct Target;
+
+/// Per-entity TTL override (pop fx lives shorter than balls).
+#[derive(Clone, Copy, Debug)]
+struct Ttl(u64);
+
 #[derive(Clone, Copy, Debug)]
 struct Born(u64);
 
@@ -84,6 +92,8 @@ pub struct GameScreen {
     last_paint: Option<std::time::Instant>,
     /// Last pointer position while a grab is active.
     last_pointer: Option<(f64, f64)>,
+    /// Targets popped so far.
+    score: u64,
 }
 
 impl Default for GameScreen {
@@ -107,6 +117,7 @@ impl GameScreen {
             sim_frame: 0,
             last_paint: None,
             last_pointer: None,
+            score: 0,
         }
     }
 
@@ -245,6 +256,28 @@ impl GameScreen {
     pub fn step(&mut self) {
         self.sim_frame = self.sim_frame.wrapping_add(1);
 
+        // Targets: keep up to 3 alive, one attempt per second at a
+        // deterministic position (upper 55% of the viewport).
+        if self.sim_frame.is_multiple_of(60) {
+            let targets = self.world.query::<Target>().count();
+            if targets < 3 {
+                let u = phys_kit::particles::hash_unit(self.sim_frame);
+                let v = phys_kit::particles::hash_unit(self.sim_frame.wrapping_add(9));
+                let x = WALL + 30.0 + u * (self.width - 2.0 * (WALL + 30.0));
+                let y = 50.0 + v * (self.height * 0.5);
+                let entity = self.world.spawn();
+                self.world.add(entity, Target);
+                // Immovable carrier for position + contacts: balls
+                // bounce off targets (inv_mass 0 skips gravity and
+                // resolution movement).
+                let mut particle = Particle::free(Vec2::new(x, y), 1.0);
+                particle.inv_mass = 0.0;
+                self.world.add(entity, Ball(particle));
+                self.world.add(entity, Radius(18.0));
+                self.world.add(entity, Tile(7));
+            }
+        }
+
         // Fountain: a steady deterministic stream so pacing evidence
         // always has moving targets.
         if self.sim_frame.is_multiple_of(FOUNTAIN_EVERY) {
@@ -324,12 +357,65 @@ impl GameScreen {
                 }
             }
         }
-        // TTL reap + entity cap.
+        // Target hits: a ball overlapping a target pops it - score,
+        // despawn, and a short-lived mini-ball spark burst.
+        let targets: Vec<Entity> = self.world.query::<Target>().map(|(e, _)| e).collect();
+        let mut popped: Vec<(Entity, Vec2)> = Vec::new();
+        for &target in &targets {
+            let (Some(t_pos), Some(t_rad)) = (
+                self.world.get::<Ball>(target).map(|b| b.0.pos),
+                self.world.get::<Radius>(target).map(|r| r.0),
+            ) else {
+                continue;
+            };
+            let hit = self
+                .world
+                .query2::<Ball, Radius>()
+                .into_iter()
+                .any(|(e, (b, r))| {
+                    // Targets carry no Ball component, so e is a ball.
+                    let dx = b.0.pos.x - t_pos.x;
+                    let dy = b.0.pos.y - t_pos.y;
+                    let rr = t_rad * 0.65 + r.0;
+                    dx * dx + dy * dy < rr * rr && self.world.get::<Target>(e).is_none()
+                });
+            if hit {
+                popped.push((target, t_pos));
+            }
+        }
+        for (target, pos) in popped {
+            self.score = self.score.saturating_add(1);
+            let _ = self.world.despawn(target);
+            for k in 0..6u64 {
+                let u = phys_kit::particles::hash_unit(self.sim_frame.wrapping_add(k * 3 + 1));
+                let v = phys_kit::particles::hash_unit(self.sim_frame.wrapping_add(k * 11 + 7));
+                let ang = std::f64::consts::TAU * u;
+                let speed = 60.0 + 140.0 * v;
+                let entity = self.world.spawn();
+                let mut particle = Particle::free(pos, 1.0);
+                particle.prev = Vec2::new(
+                    pos.x - ang.cos() * speed * DT,
+                    pos.y - ang.sin() * speed * DT,
+                );
+                self.world.add(entity, Ball(particle));
+                self.world.add(entity, Radius(3.0));
+                let tile = u8::try_from(k % 6).unwrap_or(0);
+                self.world.add(entity, Tile(tile));
+                self.world.add(entity, Born(self.sim_frame));
+                self.world.add(entity, Ttl(24));
+            }
+        }
+
+        // TTL reap + entity cap (balls only: targets persist; fx
+        // particles carry a short per-entity Ttl override).
         let frame = self.sim_frame;
         let expired: Vec<Entity> = self
             .world
             .query::<Born>()
-            .filter(|(_, b)| frame.saturating_sub(b.0) > TTL_FRAMES)
+            .filter(|(e, b)| {
+                let ttl = self.world.get::<Ttl>(*e).map(|t| t.0).unwrap_or(TTL_FRAMES);
+                frame.saturating_sub(b.0) > ttl
+            })
             .map(|(e, _)| e)
             .collect();
         for entity in expired {
@@ -390,6 +476,7 @@ impl GameScreen {
             );
             let name = match tile.0 {
                 6 => "player",
+                7 => "target",
                 i => TILE_NAMES
                     .get(usize::from(i) % TILE_NAMES.len())
                     .copied()
@@ -422,7 +509,7 @@ impl GameScreen {
                 width: self.width - 16.0,
                 height: 20.0,
             },
-            &format!("fresco game  balls {balls_n}  sim {}", self.sim_frame),
+            &format!("fresco game  balls {balls_n}  score {}", self.score),
             14.0,
             [220, 224, 232, 255],
         );
@@ -434,7 +521,7 @@ impl GameScreen {
                 width: self.width - 16.0,
                 height: 18.0,
             },
-            "tap = burst + grab  drag = fling",
+            "tap = burst + grab  drag = fling  pop targets",
             12.0,
             [150, 156, 170, 255],
         );
@@ -444,6 +531,22 @@ impl GameScreen {
     #[must_use]
     pub fn entity_count(&self) -> usize {
         self.world.entity_count()
+    }
+
+    /// Popped-target count (HUD + oracle use).
+    #[must_use]
+    pub const fn score(&self) -> u64 {
+        self.score
+    }
+
+    /// Target centers, for oracles.
+    #[must_use]
+    pub fn target_centers(&self) -> Vec<(f64, f64)> {
+        self.world
+            .query2::<Target, Ball>()
+            .into_iter()
+            .map(|(_, (_, b))| (b.0.pos.x, b.0.pos.y))
+            .collect()
     }
 
     /// Ball centers, sorted, for determinism oracles.
@@ -517,6 +620,67 @@ mod tests {
         let a = run();
         let b = run();
         assert_eq!(a, b, "same inputs must produce identical sim state");
+    }
+
+    /// Oracle: a ball touching a target pops it - score increments,
+    /// the fx sparks spawn, and a later cadence tick respawns the
+    /// target.
+    #[test]
+    fn target_pop_scores_and_respawns() {
+        let mut game = GameScreen::new();
+        game.resize(360, 740);
+        for _ in 0..61 {
+            game.step();
+        }
+        let targets = game.target_centers();
+        assert!(!targets.is_empty(), "spawn tick must produce a target");
+        let before_targets = targets.len();
+        // Drop a burst directly on the first target: one ball lands
+        // dead-center, so the pop fires on the next step.
+        let Some(&(tx, ty)) = targets.first() else {
+            return;
+        };
+        game.pointer_down(tx, ty);
+        game.step();
+        assert!(game.score() >= 1, "hit must score: {}", game.score());
+        assert_eq!(
+            game.target_centers().len(),
+            before_targets - 1,
+            "popped target must despawn"
+        );
+        // Respawn cadence: within a second of steps a new target is
+        // back (cap 3, spawn attempt every 60 sim frames).
+        for _ in 0..61 {
+            game.step();
+        }
+        assert!(!game.target_centers().is_empty(), "targets must respawn");
+    }
+
+    /// Oracle: pop fx sparks are short-lived - within the standard
+    /// TTL they are gone (Ttl override 24 < 300).
+    #[test]
+    fn pop_fx_expires_fast() {
+        let mut game = GameScreen::new();
+        game.resize(360, 740);
+        for _ in 0..61 {
+            game.step();
+        }
+        let (tx, ty) = game
+            .target_centers()
+            .first()
+            .copied()
+            .unwrap_or((180.0, 200.0));
+        game.pointer_down(tx, ty);
+        game.step();
+        let after_pop = game.entity_count();
+        for _ in 0..30 {
+            game.step();
+        }
+        assert!(
+            game.entity_count() < after_pop,
+            "fx sparks must expire: {after_pop} -> {}",
+            game.entity_count()
+        );
     }
 
     /// Oracle: a tap spawns BURST balls plus the grabbed player.
