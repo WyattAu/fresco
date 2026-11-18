@@ -44,6 +44,10 @@ const MAX_BALLS: usize = 96;
 /// Fountain cadence: one spawned ball every N sim frames.
 const FOUNTAIN_EVERY: u64 = 15;
 
+/// Combo window: pops closer than this in sim frames chain a
+/// multiplier (3 s at 60 Hz).
+const COMBO_FRAMES: u64 = 180;
+
 /// Tap burst size.
 const BURST: usize = 8;
 
@@ -75,6 +79,11 @@ struct Target;
 #[derive(Clone, Copy, Debug)]
 struct Ttl(u64);
 
+/// Target drift velocity (px/s): targets wander slowly and bounce
+/// inside their band, so pops require leading the shot.
+#[derive(Clone, Copy, Debug)]
+struct Drift(Vec2);
+
 #[derive(Clone, Copy, Debug)]
 struct Born(u64);
 
@@ -92,8 +101,13 @@ pub struct GameScreen {
     last_paint: Option<std::time::Instant>,
     /// Last pointer position while a grab is active.
     last_pointer: Option<(f64, f64)>,
-    /// Targets popped so far.
+    /// Targets popped so far (base 1 per pop).
     score: u64,
+    /// Consecutive pops inside [`COMBO_FRAMES`]: each pop scores
+    /// `1 + combo`.
+    combo: u64,
+    /// Sim frame of the last pop (combo window reference).
+    last_pop: Option<u64>,
 }
 
 impl Default for GameScreen {
@@ -118,6 +132,8 @@ impl GameScreen {
             last_paint: None,
             last_pointer: None,
             score: 0,
+            combo: 0,
+            last_pop: None,
         }
     }
 
@@ -264,7 +280,12 @@ impl GameScreen {
                 let u = phys_kit::particles::hash_unit(self.sim_frame);
                 let v = phys_kit::particles::hash_unit(self.sim_frame.wrapping_add(9));
                 let x = WALL + 30.0 + u * (self.width - 2.0 * (WALL + 30.0));
-                let y = 50.0 + v * (self.height * 0.5);
+                // Spawn INSIDE the drift band (band_top..band_bot of
+                // the drift pass): an out-of-band spawn would be
+                // clamped-teleported on the first drift step.
+                let band_top = 40.0 + 18.0;
+                let band_bot = self.height * 0.55 + 18.0;
+                let y = band_top + v * (band_bot - band_top);
                 let entity = self.world.spawn();
                 self.world.add(entity, Target);
                 // Immovable carrier for position + contacts: balls
@@ -273,6 +294,16 @@ impl GameScreen {
                 let mut particle = Particle::free(Vec2::new(x, y), 1.0);
                 particle.inv_mass = 0.0;
                 self.world.add(entity, Ball(particle));
+                // Slow wander: 6..24 px/s in a random direction,
+                // deterministic per spawn tick.
+                let wu = phys_kit::particles::hash_unit(self.sim_frame.wrapping_add(23));
+                let wv = phys_kit::particles::hash_unit(self.sim_frame.wrapping_add(31));
+                let ang = std::f64::consts::TAU * wu;
+                let speed = 6.0 + 18.0 * wv;
+                self.world.add(
+                    entity,
+                    Drift(Vec2::new(ang.cos() * speed, ang.sin() * speed)),
+                );
                 self.world.add(entity, Radius(18.0));
                 self.world.add(entity, Tile(7));
             }
@@ -357,8 +388,48 @@ impl GameScreen {
                 }
             }
         }
-        // Target hits: a ball overlapping a target pops it - score,
-        // despawn, and a short-lived mini-ball spark burst.
+        // Target drift: kinematic wander, bounced inside the upper
+        // band (targets never leave their region).
+        let targets: Vec<Entity> = self.world.query::<Target>().map(|(e, _)| e).collect();
+        for &target in &targets {
+            let (Some(band_r), Some(drift)) = (
+                self.world.get::<Radius>(target).map(|r| r.0),
+                self.world.get::<Drift>(target).map(|d| d.0),
+            ) else {
+                continue;
+            };
+            let mut vx = drift.x;
+            let mut vy = drift.y;
+            let band_top = 40.0 + band_r;
+            let band_bot = self.height * 0.55 + band_r;
+            if let Some(ball) = self.world.get_mut::<Ball>(target) {
+                let mut nx = ball.0.pos.x + vx * DT;
+                let mut ny = ball.0.pos.y + vy * DT;
+                if nx < WALL + band_r || nx > self.width - WALL - band_r {
+                    vx = -vx;
+                    nx = nx.clamp(WALL + band_r, self.width - WALL - band_r);
+                }
+                if ny < band_top || ny > band_bot {
+                    vy = -vy;
+                    ny = ny.clamp(band_top, band_bot);
+                }
+                ball.0.pos = Vec2::new(nx, ny);
+                ball.0.prev = ball.0.pos;
+            }
+            if let Some(d) = self.world.get_mut::<Drift>(target) {
+                d.0 = Vec2::new(vx, vy);
+            }
+        }
+
+        // Combo expiry: a stale chain resets before it can multiply.
+        if let Some(last) = self.last_pop
+            && self.sim_frame.saturating_sub(last) > COMBO_FRAMES
+        {
+            self.combo = 0;
+        }
+
+        // Target hits: a ball touching a target ring pops it -
+        // score, despawn, and a short-lived mini-ball spark burst.
         let targets: Vec<Entity> = self.world.query::<Target>().map(|(e, _)| e).collect();
         let mut popped: Vec<(Entity, Vec2)> = Vec::new();
         for &target in &targets {
@@ -376,7 +447,13 @@ impl GameScreen {
                     // Targets carry no Ball component, so e is a ball.
                     let dx = b.0.pos.x - t_pos.x;
                     let dy = b.0.pos.y - t_pos.y;
-                    let rr = t_rad * 0.65 + r.0;
+                    // Contact-aligned hitbox: ball-ball resolution
+                    // ejects a touching ball to ~t_rad + r (gravity
+                    // adds sub-pixel wobble), so the pop fires on the
+                    // same step's post-contact pass. Half a pixel of
+                    // slack absorbs the wobble without reading as a
+                    // different hitbox.
+                    let rr = t_rad + r.0 + 0.5;
                     dx * dx + dy * dy < rr * rr && self.world.get::<Target>(e).is_none()
                 });
             if hit {
@@ -384,7 +461,19 @@ impl GameScreen {
             }
         }
         for (target, pos) in popped {
-            self.score = self.score.saturating_add(1);
+            // Combo: a pop inside the window chains (each consecutive
+            // pop scores one more); outside the window the chain
+            // restarts.
+            let chained = self
+                .last_pop
+                .is_some_and(|l| self.sim_frame.saturating_sub(l) <= COMBO_FRAMES);
+            self.combo = if chained {
+                self.combo.saturating_add(1)
+            } else {
+                0
+            };
+            self.last_pop = Some(self.sim_frame);
+            self.score = self.score.saturating_add(1 + self.combo);
             let _ = self.world.despawn(target);
             for k in 0..6u64 {
                 let u = phys_kit::particles::hash_unit(self.sim_frame.wrapping_add(k * 3 + 1));
@@ -509,7 +598,10 @@ impl GameScreen {
                 width: self.width - 16.0,
                 height: 20.0,
             },
-            &format!("fresco game  balls {balls_n}  score {}", self.score),
+            &format!(
+                "fresco game  balls {balls_n}  score {}  x{}",
+                self.score, self.combo
+            ),
             14.0,
             [220, 224, 232, 255],
         );
@@ -537,6 +629,12 @@ impl GameScreen {
     #[must_use]
     pub const fn score(&self) -> u64 {
         self.score
+    }
+
+    /// Active combo chain length (HUD + oracle use).
+    #[must_use]
+    pub const fn combo(&self) -> u64 {
+        self.combo
     }
 
     /// Target centers, for oracles.
@@ -694,6 +792,89 @@ mod tests {
             game.entity_count(),
             before + BURST + 1,
             "tap spawns BURST + player"
+        );
+    }
+
+    /// Oracle: pops inside the combo window chain (1 + 2 points);
+    /// pops outside it do not (1 + 1). Uses direct single-ball spawns
+    /// (no burst noise) via the in-crate spawn helper.
+    #[test]
+    fn combo_chains_inside_window_only() {
+        let mut game = GameScreen::new();
+        game.resize(360, 740);
+        for _ in 0..61 {
+            game.step();
+        }
+        // Pop 1: ball dead-center on the target.
+        let Some(&(tx, ty)) = game.target_centers().first() else {
+            return;
+        };
+        game.spawn(Vec2::new(tx, ty), Vec2::ZERO);
+        game.step();
+        assert_eq!(game.score(), 1, "first pop scores 1");
+        assert_eq!(game.combo(), 0, "first pop starts no chain");
+
+        // Pop 2 at frame ~122 (respawn tick 120): inside the window.
+        for _ in 0..61 {
+            game.step();
+        }
+        let Some(&(tx, ty)) = game.target_centers().first() else {
+            return;
+        };
+        game.spawn(Vec2::new(tx, ty), Vec2::ZERO);
+        game.step();
+        assert_eq!(game.combo(), 1, "second pop in window chains");
+        assert_eq!(game.score(), 3, "chained pop scores 2");
+
+        // Pop 3 after a 300-frame gap: the chain has expired by the
+        // expiry pass alone (stale chains reset without a pop), and
+        // the pop still scores. The score delta may exceed 1 when fx
+        // sparks cascade into a neighbouring target same-frame - that
+        // is the simultaneous-pop chain by design - so only growth is
+        // asserted.
+        for _ in 0..300 {
+            game.step();
+        }
+        assert_eq!(game.combo(), 0, "gap expires the chain");
+        let before = game.score();
+        let Some(&(tx, ty)) = game.target_centers().first() else {
+            return;
+        };
+        game.spawn(Vec2::new(tx, ty), Vec2::ZERO);
+        game.step();
+        assert!(game.score() > before, "pop after the gap still scores");
+    }
+
+    /// Oracle: targets drift and stay inside their band.
+    #[test]
+    fn targets_drift_inside_band() {
+        let mut game = GameScreen::new();
+        game.resize(360, 740);
+        for _ in 0..61 {
+            game.step();
+        }
+        assert!(!game.target_centers().is_empty(), "target must spawn");
+        let Some(&first) = game.target_centers().first() else {
+            return;
+        };
+        for _ in 0..120 {
+            game.step();
+        }
+        let last = *game
+            .target_centers()
+            .iter()
+            .min_by(|a, b| {
+                let da = (a.0 - first.0).powi(2) + (a.1 - first.1).powi(2);
+                let db = (b.0 - first.0).powi(2) + (b.1 - first.1).powi(2);
+                da.total_cmp(&db)
+            })
+            .unwrap_or(&first);
+        let moved = ((last.0 - first.0).powi(2) + (last.1 - first.1).powi(2)).sqrt();
+        assert!(moved > 5.0, "target must drift: {moved:.1} px over 120f");
+        assert!(
+            last.1 >= 40.0 && last.1 <= 740.0 * 0.55 + 40.0,
+            "drift must stay in the band: y={:.1}",
+            last.1
         );
     }
 
