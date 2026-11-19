@@ -14,7 +14,7 @@ pub mod atlas;
 pub mod game;
 pub mod menu;
 
-use game::GameScreen;
+use game::{GameScreen, hud_button_at};
 use menu::MenuScreen;
 use window_kit::inspector::Inspector;
 
@@ -364,7 +364,24 @@ impl ApplicationHandler for GameApp {
                             if let Some(at) = self.last_cursor {
                                 match self.state {
                                     AppState::Menu => self.menu.pointer_down(at.x, at.y),
-                                    AppState::Game => self.screen.pointer_down(at.x, at.y),
+                                    AppState::Game => {
+                                        // HUD overlay buttons take
+                                        // priority over game input.
+                                        match hud_button_at(
+                                            self.screen.view_width(),
+                                            self.screen.view_height(),
+                                            at.x,
+                                            at.y,
+                                        ) {
+                                            Some(game::HudButton::Pause) => {
+                                                self.screen.toggle_pause();
+                                            }
+                                            Some(game::HudButton::Menu) => {
+                                                self.state = AppState::Menu;
+                                            }
+                                            None => self.screen.pointer_down(at.x, at.y),
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -392,7 +409,18 @@ impl ApplicationHandler for GameApp {
                 match touch.phase {
                     winit::event::TouchPhase::Started => match self.state {
                         AppState::Menu => self.menu.pointer_down(at.x, at.y),
-                        AppState::Game => self.screen.pointer_down(at.x, at.y),
+                        AppState::Game => {
+                            match hud_button_at(
+                                self.screen.view_width(),
+                                self.screen.view_height(),
+                                at.x,
+                                at.y,
+                            ) {
+                                Some(game::HudButton::Pause) => self.screen.toggle_pause(),
+                                Some(game::HudButton::Menu) => self.state = AppState::Menu,
+                                None => self.screen.pointer_down(at.x, at.y),
+                            }
+                        }
                     },
                     winit::event::TouchPhase::Moved => {
                         if matches!(self.state, AppState::Game) {

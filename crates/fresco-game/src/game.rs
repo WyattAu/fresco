@@ -87,6 +87,37 @@ struct Drift(Vec2);
 #[derive(Clone, Copy, Debug)]
 struct Born(u64);
 
+/// HUD overlay buttons: pause toggle and back-to-menu, drawn on the
+/// game's first HUD row (right-aligned).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HudButton {
+    /// Pause / unpause the sim.
+    Pause,
+    /// Return to the main menu (discards the run).
+    Menu,
+}
+
+/// Which HUD button sits under a logical point, if any. Shared by the
+/// shell's tap routing and the paint pass so the hit region and the
+/// drawn affordance can never drift apart.
+#[must_use]
+pub fn hud_button_at(width: f64, height: f64, x: f64, y: f64) -> Option<HudButton> {
+    let _ = height;
+    let row = 4.0..=30.0;
+    let pause_x = (width - 54.0)..=(width - 8.0);
+    let menu_x = (width - 118.0)..=(width - 58.0);
+    if !row.contains(&y) {
+        return None;
+    }
+    if pause_x.contains(&x) {
+        Some(HudButton::Pause)
+    } else if menu_x.contains(&x) {
+        Some(HudButton::Menu)
+    } else {
+        None
+    }
+}
+
 /// The game screen: ECS world, walls, sim clock, input.
 pub struct GameScreen {
     world: World,
@@ -102,6 +133,9 @@ pub struct GameScreen {
     /// menu difficulty.
     fountain_every: u64,
     last_paint: Option<std::time::Instant>,
+    /// Whether the sim is paused (the wall-time drain freezes; the
+    /// render keeps running so the frozen frame stays visible).
+    paused: bool,
     /// Last pointer position while a grab is active.
     last_pointer: Option<(f64, f64)>,
     /// Targets popped so far (base 1 per pop).
@@ -133,6 +167,7 @@ impl GameScreen {
             acc: 0.0,
             sim_frame: 0,
             fountain_every: FOUNTAIN_EVERY,
+            paused: false,
             last_paint: None,
             last_pointer: None,
             score: 0,
@@ -522,6 +557,13 @@ impl GameScreen {
     /// Drain accumulated wall time in fixed steps (capped so a stalled
     /// renderer cannot spiral the sim).
     pub fn step_wall_time(&mut self, now: std::time::Instant) {
+        if self.paused {
+            // Freeze the sim but keep consuming the wall clock so an
+            // unpause does not sprint through the paused interval.
+            self.last_paint = Some(now);
+            self.acc = 0.0;
+            return;
+        }
         let dt = match self.last_paint {
             Some(last) => now.duration_since(last).as_secs_f64().min(0.05),
             None => 0.0,
@@ -538,6 +580,17 @@ impl GameScreen {
             // Renderer stalled: drop the backlog instead of sprinting.
             self.acc = 0.0;
         }
+    }
+
+    /// Toggle the pause state.
+    pub fn toggle_pause(&mut self) {
+        self.paused = !self.paused;
+    }
+
+    /// Whether the sim is paused.
+    #[must_use]
+    pub const fn paused(&self) -> bool {
+        self.paused
     }
 
     /// Paint one frame: background, balls, HUD.
@@ -621,6 +674,47 @@ impl GameScreen {
             12.0,
             [150, 156, 170, 255],
         );
+        // HUD overlay buttons (right-aligned on the first row), with
+        // the paused state called out under them.
+        let pause_label = if self.paused { "play" } else { "pause" };
+        widget_kit::WidgetRenderer::label_text(
+            &mut hud,
+            widget_kit::Rect2D {
+                x: self.width - 52.0,
+                y: 6.0,
+                width: 46.0,
+                height: 18.0,
+            },
+            pause_label,
+            12.0,
+            [255, 210, 120, 255],
+        );
+        widget_kit::WidgetRenderer::label_text(
+            &mut hud,
+            widget_kit::Rect2D {
+                x: self.width - 114.0,
+                y: 6.0,
+                width: 54.0,
+                height: 18.0,
+            },
+            "menu",
+            12.0,
+            [150, 156, 170, 255],
+        );
+        if self.paused {
+            widget_kit::WidgetRenderer::label_text(
+                &mut hud,
+                widget_kit::Rect2D {
+                    x: 8.0,
+                    y: 46.0,
+                    width: self.width - 16.0,
+                    height: 18.0,
+                },
+                "paused - tap play to resume, menu to quit",
+                12.0,
+                [255, 210, 120, 255],
+            );
+        }
     }
 
     /// Set the fountain cadence from the menu difficulty.
@@ -644,6 +738,24 @@ impl GameScreen {
     #[must_use]
     pub const fn combo(&self) -> u64 {
         self.combo
+    }
+
+    /// Viewport width in logical px (HUD hit-region use).
+    #[must_use]
+    pub const fn view_width(&self) -> f64 {
+        self.width
+    }
+
+    /// Viewport height in logical px (HUD hit-region use).
+    #[must_use]
+    pub const fn view_height(&self) -> f64 {
+        self.height
+    }
+
+    /// Whole sim frames stepped (oracle use).
+    #[must_use]
+    pub const fn sim_frame_now(&self) -> u64 {
+        self.sim_frame
     }
 
     /// Target centers, for oracles.
@@ -901,6 +1013,46 @@ mod tests {
                 .iter()
                 .any(|&(x, y)| (x - 120.0).abs() < 1.0 && (y - 200.0).abs() < 1.0),
             "player must sit at the pointer: {centers:?}"
+        );
+    }
+
+    /// Oracle: pausing freezes the sim; unpausing resumes it.
+    #[test]
+    fn pause_freezes_sim() {
+        let mut game = GameScreen::new();
+        game.resize(360, 740);
+        game.pointer_down(180.0, 300.0);
+        let now = std::time::Instant::now();
+        game.step_wall_time(now);
+        let before = game.sim_frame_now();
+        game.toggle_pause();
+        assert!(game.paused(), "pause must set the flag");
+        // A paused drain consumes the interval without stepping.
+        game.step_wall_time(now + std::time::Duration::from_millis(100));
+        assert_eq!(game.sim_frame_now(), before, "paused sim must freeze");
+        game.toggle_pause();
+        assert!(!game.paused(), "unpause must clear the flag");
+        game.step_wall_time(now + std::time::Duration::from_millis(200));
+        assert!(game.sim_frame_now() > before, "unpaused sim must advance");
+    }
+
+    /// Oracle: the HUD button hit regions match the drawn labels.
+    #[test]
+    fn hud_button_regions() {
+        use HudButton;
+        assert_eq!(
+            hud_button_at(360.0, 740.0, 330.0, 15.0),
+            Some(HudButton::Pause)
+        );
+        assert_eq!(
+            hud_button_at(360.0, 740.0, 280.0, 15.0),
+            Some(HudButton::Menu)
+        );
+        assert_eq!(hud_button_at(360.0, 740.0, 180.0, 15.0), None);
+        assert_eq!(
+            hud_button_at(360.0, 740.0, 330.0, 100.0),
+            None,
+            "outside the row"
         );
     }
 
