@@ -12,8 +12,10 @@
 
 pub mod atlas;
 pub mod game;
+pub mod menu;
 
 use game::GameScreen;
+use menu::MenuScreen;
 use window_kit::inspector::Inspector;
 
 use paint_kit::{Painter, Surface};
@@ -22,8 +24,18 @@ use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::window::{Window, WindowId};
 
+/// Which screen the shell shows.
+enum AppState {
+    /// Main menu (widget-kit screen).
+    Menu,
+    /// The running game.
+    Game,
+}
+
 /// Shared application state for both shells.
 struct GameApp {
+    state: AppState,
+    menu: MenuScreen,
     window: Option<std::sync::Arc<Window>>,
     context: Option<softbuffer::Context<std::sync::Arc<Window>>>,
     surface: Option<softbuffer::Surface<std::sync::Arc<Window>, std::sync::Arc<Window>>>,
@@ -50,6 +62,8 @@ struct GameApp {
 impl Default for GameApp {
     fn default() -> Self {
         Self {
+            state: AppState::Menu,
+            menu: MenuScreen::new(),
             window: None,
             context: None,
             surface: None,
@@ -105,11 +119,13 @@ impl GameApp {
         );
         let (wu, hu) = (size.width.max(1) as usize, size.height.max(1) as usize);
 
-        // Sim first: fixed-timestep steps drain the wall clock.
-        self.screen.step_wall_time(std::time::Instant::now());
-
         let paint_start = std::time::Instant::now();
+        // Sim only while playing; the menu is a static widget screen.
+        if matches!(self.state, AppState::Game) {
+            self.screen.step_wall_time(std::time::Instant::now());
+        }
         self.screen.resize(lwu, lhu);
+        self.menu.resize(lwu, lhu);
         let mut scene_surface = self
             .scene_surface
             .take()
@@ -118,7 +134,10 @@ impl GameApp {
             scene_surface = Surface::new(lwu, lhu).unwrap_or_default();
         }
         let mut painter = self.scene_painter.take().unwrap_or_default();
-        self.screen.paint(&mut scene_surface, &mut painter);
+        match self.state {
+            AppState::Menu => self.menu.paint(&mut scene_surface, &mut painter),
+            AppState::Game => self.screen.paint(&mut scene_surface, &mut painter),
+        }
         self.scene_painter = Some(painter);
         // Return the painted surface BEFORE the blit: it is both the
         // blit source and the inspector's capture source.
@@ -206,6 +225,17 @@ impl GameApp {
         }
 
         window.request_redraw();
+    }
+
+    /// Menu hook: when the Play button activated, transition to the
+    /// game with the selected difficulty.
+    fn maybe_start_game(&mut self) {
+        if self.menu.play_pressed() {
+            let rate = self.menu.difficulty().fountain_every();
+            self.screen = GameScreen::new();
+            self.screen.set_fountain_every(rate);
+            self.state = AppState::Game;
+        }
     }
 
     fn pointer_at(&self, position: winit::dpi::PhysicalPosition<f64>) -> widget_kit::LogicalAt {
@@ -332,13 +362,22 @@ impl ApplicationHandler for GameApp {
                         winit::event::ElementState::Pressed => {
                             self.mouse_down = true;
                             if let Some(at) = self.last_cursor {
-                                self.screen.pointer_down(at.x, at.y);
+                                match self.state {
+                                    AppState::Menu => self.menu.pointer_down(at.x, at.y),
+                                    AppState::Game => self.screen.pointer_down(at.x, at.y),
+                                }
                             }
                         }
                         winit::event::ElementState::Released => {
                             self.mouse_down = false;
                             if let Some(at) = self.last_cursor {
-                                self.screen.pointer_up(at.x, at.y);
+                                match self.state {
+                                    AppState::Menu => {
+                                        self.menu.pointer_up(at.x, at.y);
+                                        self.maybe_start_game();
+                                    }
+                                    AppState::Game => self.screen.pointer_up(at.x, at.y),
+                                }
                             }
                         }
                     }
@@ -351,10 +390,23 @@ impl ApplicationHandler for GameApp {
                     y: touch.location.y,
                 };
                 match touch.phase {
-                    winit::event::TouchPhase::Started => self.screen.pointer_down(at.x, at.y),
-                    winit::event::TouchPhase::Moved => self.screen.pointer_move(at.x, at.y),
+                    winit::event::TouchPhase::Started => match self.state {
+                        AppState::Menu => self.menu.pointer_down(at.x, at.y),
+                        AppState::Game => self.screen.pointer_down(at.x, at.y),
+                    },
+                    winit::event::TouchPhase::Moved => {
+                        if matches!(self.state, AppState::Game) {
+                            self.screen.pointer_move(at.x, at.y);
+                        }
+                    }
                     winit::event::TouchPhase::Ended | winit::event::TouchPhase::Cancelled => {
-                        self.screen.pointer_up(at.x, at.y)
+                        match self.state {
+                            AppState::Menu => {
+                                self.menu.pointer_up(at.x, at.y);
+                                self.maybe_start_game();
+                            }
+                            AppState::Game => self.screen.pointer_up(at.x, at.y),
+                        }
                     }
                 }
                 if let Some(window) = self.window.clone() {

@@ -98,6 +98,9 @@ pub struct GameScreen {
     acc: f64,
     /// Whole sim frames stepped since construction.
     sim_frame: u64,
+    /// Fountain cadence (sim frames per spawned ball); set from the
+    /// menu difficulty.
+    fountain_every: u64,
     last_paint: Option<std::time::Instant>,
     /// Last pointer position while a grab is active.
     last_pointer: Option<(f64, f64)>,
@@ -129,6 +132,7 @@ impl GameScreen {
             height: 0.0,
             acc: 0.0,
             sim_frame: 0,
+            fountain_every: FOUNTAIN_EVERY,
             last_paint: None,
             last_pointer: None,
             score: 0,
@@ -311,7 +315,7 @@ impl GameScreen {
 
         // Fountain: a steady deterministic stream so pacing evidence
         // always has moving targets.
-        if self.sim_frame.is_multiple_of(FOUNTAIN_EVERY) {
+        if self.sim_frame.is_multiple_of(self.fountain_every) {
             let u = phys_kit::particles::hash_unit(self.sim_frame);
             let v = phys_kit::particles::hash_unit(self.sim_frame.wrapping_add(3));
             let w = phys_kit::particles::hash_unit(self.sim_frame.wrapping_add(17));
@@ -617,6 +621,11 @@ impl GameScreen {
             12.0,
             [150, 156, 170, 255],
         );
+    }
+
+    /// Set the fountain cadence from the menu difficulty.
+    pub fn set_fountain_every(&mut self, frames: u64) {
+        self.fountain_every = frames.max(1);
     }
 
     /// Alive entity count (HUD + oracle use).

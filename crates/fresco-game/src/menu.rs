@@ -1,0 +1,195 @@
+//! The game's main menu: real widget-kit components (label, select,
+//! button) laid out by the estate flow engine - the same retained-mode
+//! UI layer a full app would host.
+//!
+//! Play transitions to the game; the difficulty select maps to the
+//! fountain rate (Relaxed 30 / Normal 15 / Frenzy 6 sim frames per
+//! spawned ball).
+
+use paint_kit::{Painter, Surface};
+use widget_kit::{LogicalAt, Size2D, WidgetColors, WidgetKind, WidgetRef, WidgetTree, paint_tree};
+
+/// Difficulty choice: sim frames between fountain spawns.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Difficulty {
+    /// A ball every 30 frames.
+    Relaxed,
+    /// A ball every 15 frames (default).
+    Normal,
+    /// A ball every 6 frames.
+    Frenzy,
+}
+
+impl Difficulty {
+    /// Fountain cadence in sim frames.
+    #[must_use]
+    pub const fn fountain_every(self) -> u64 {
+        match self {
+            Difficulty::Relaxed => 30,
+            Difficulty::Normal => 15,
+            Difficulty::Frenzy => 6,
+        }
+    }
+
+    /// From the select's option index.
+    #[must_use]
+    pub const fn from_index(i: usize) -> Self {
+        match i {
+            0 => Difficulty::Relaxed,
+            2 => Difficulty::Frenzy,
+            _ => Difficulty::Normal,
+        }
+    }
+}
+
+/// The main menu screen.
+pub struct MenuScreen {
+    tree: WidgetTree,
+    colors: WidgetColors,
+    play_ref: WidgetRef,
+    difficulty_ref: WidgetRef,
+}
+
+impl Default for MenuScreen {
+    fn default() -> Self {
+        MenuScreen::new()
+    }
+}
+
+impl MenuScreen {
+    /// Build the menu.
+    #[must_use]
+    pub fn new() -> Self {
+        let mut tree = WidgetTree::new();
+        let root = tree.push(WidgetKind::Column { gap: 14.0 });
+        // ASCII-only strings: realfont covers them and the micro-font
+        // fallback stays ASCII-safe.
+        let title = tree.push(WidgetKind::Label {
+            text: "fresco game".to_string(),
+            px_size: 24.0,
+        });
+        tree.add_child(root, title);
+        let subtitle = tree.push(WidgetKind::Label {
+            text: "pop targets - grab + fling balls".to_string(),
+            px_size: 13.0,
+        });
+        tree.add_child(root, subtitle);
+        let difficulty = tree.push(WidgetKind::Select {
+            options: vec![
+                "Relaxed".to_string(),
+                "Normal".to_string(),
+                "Frenzy".to_string(),
+            ],
+            selected: 1,
+            open: false,
+        });
+        tree.add_child(root, difficulty);
+        let play = tree.push(WidgetKind::Button {
+            label: "Play".to_string(),
+            action: 1,
+        });
+        tree.add_child(root, play);
+        MenuScreen {
+            tree,
+            colors: WidgetColors::default(),
+            play_ref: play,
+            difficulty_ref: difficulty,
+        }
+    }
+
+    /// Lay out into the viewport (call on resize).
+    pub fn resize(&mut self, width: usize, height: usize) {
+        self.tree.compute(Size2D {
+            width: f64::from(u32::try_from(width.max(1)).unwrap_or(1)),
+            height: f64::from(u32::try_from(height.max(1)).unwrap_or(1)),
+        });
+    }
+
+    /// Pointer down (touch start / mouse press).
+    pub fn pointer_down(&mut self, x: f64, y: f64) {
+        self.tree.pointer_down(LogicalAt { x, y });
+    }
+
+    /// Pointer move: no menu widgets track hover yet.
+    pub fn pointer_move(&mut self, _x: f64, _y: f64) {}
+
+    /// Pointer up: activates the pressed widget; drain the action
+    /// queue afterward via [`Self::play_pressed`].
+    pub fn pointer_up(&mut self, x: f64, y: f64) {
+        self.tree.pointer_up(LogicalAt { x, y });
+    }
+
+    /// Whether the Play button activated since the last call.
+    pub fn play_pressed(&mut self) -> bool {
+        self.tree.take_actions().contains(&1)
+    }
+
+    /// The selected difficulty.
+    #[must_use]
+    pub fn difficulty(&self) -> Difficulty {
+        Difficulty::from_index(self.tree.select_selected(self.difficulty_ref).unwrap_or(1))
+    }
+
+    /// Paint the menu.
+    pub fn paint(&mut self, surface: &mut Surface, painter: &mut Painter) {
+        paint_tree(&self.tree, surface, painter, &self.colors);
+    }
+
+    /// The Play button's laid-out rect (oracle use).
+    #[must_use]
+    pub fn play_rect(&self) -> Option<(f64, f64, f64, f64)> {
+        let w = self.tree.widget(self.play_ref)?;
+        Some((w.rect.x, w.rect.y, w.rect.width, w.rect.height))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Oracle: a press + release inside the Play button rect queues
+    /// action 1 (the play transition).
+    #[test]
+    fn play_button_activates() {
+        let mut menu = MenuScreen::new();
+        menu.resize(360, 740);
+        let Some((bx, by, bw, bh)) = menu.play_rect() else {
+            return;
+        };
+        let cx = bx + bw * 0.5;
+        let cy = by + bh * 0.5;
+        assert!(!menu.play_pressed(), "no press yet");
+        menu.pointer_down(cx, cy);
+        menu.pointer_up(cx, cy);
+        assert!(menu.play_pressed(), "press on Play must queue action 1");
+        assert!(
+            !menu.play_pressed(),
+            "actions drain: queue must be empty after take"
+        );
+    }
+
+    /// Oracle: the difficulty select maps to fountain rates.
+    #[test]
+    fn difficulty_maps_to_rate() {
+        let mut menu = MenuScreen::new();
+        menu.resize(360, 740);
+        assert_eq!(menu.difficulty(), Difficulty::Normal);
+        assert_eq!(Difficulty::Relaxed.fountain_every(), 30);
+        assert_eq!(Difficulty::Frenzy.fountain_every(), 6);
+        assert_eq!(Difficulty::Normal.fountain_every(), 15);
+    }
+
+    /// Oracle: the menu paints deterministically.
+    #[test]
+    fn menu_paints_deterministically() {
+        let paint = || {
+            let mut menu = MenuScreen::new();
+            menu.resize(360, 740);
+            let mut surface = Surface::new(360, 740).unwrap_or_default();
+            let mut painter = Painter::default();
+            menu.paint(&mut surface, &mut painter);
+            surface.data().to_vec()
+        };
+        assert_eq!(paint(), paint(), "menu bytes must be deterministic");
+    }
+}
