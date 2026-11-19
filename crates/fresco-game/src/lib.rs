@@ -51,6 +51,11 @@ struct GameApp {
     inspector: Option<Inspector>,
     last_frame_at: Option<std::time::Instant>,
     fps: f64,
+    /// Best score this device has seen (persisted in the capture
+    /// dir as `highscore.txt`).
+    best: u64,
+    /// Capture dir (observability artifacts + highscore file).
+    capture_dir: Option<std::path::PathBuf>,
     /// Last present() cost (microseconds) - the queueBuffer/vsync
     /// wait is the frame-period component paint_us cannot explain.
     present_us: u128,
@@ -77,6 +82,8 @@ impl Default for GameApp {
             inspector: None,
             last_frame_at: None,
             fps: 0.0,
+            best: 0,
+            capture_dir: None,
             present_us: 0,
             pacing_file: None,
         }
@@ -182,6 +189,18 @@ impl GameApp {
         }
         self.present_us = present_start.elapsed().as_micros();
         self.surface = Some(sb_surface);
+
+        // Best-score bookkeeping: grow + persist only on change.
+        if matches!(self.state, AppState::Game) {
+            let score = self.screen.score();
+            if score > self.best {
+                self.best = score;
+                self.screen.set_best(self.best);
+                if let Some(dir) = self.capture_dir.as_ref() {
+                    write_best(dir, self.best);
+                }
+            }
+        }
 
         // Observability + pacing bookkeeping.
         self.observe_frame(paint_us);
@@ -292,6 +311,10 @@ impl ApplicationHandler for GameApp {
                     "/tmp/opencode/fresco-game-trace"
                 };
                 let dir = std::env::var("GATE_A_DIR").unwrap_or_else(|_| default_dir.to_owned());
+                self.capture_dir = Some(std::path::PathBuf::from(&dir));
+                self.best = read_best(std::path::Path::new(&dir));
+                self.screen.set_best(self.best);
+                self.menu.set_best(self.best);
                 self.inspector = Some(Inspector::with_dir(
                     std::path::PathBuf::from(&dir),
                     true,
@@ -377,6 +400,7 @@ impl ApplicationHandler for GameApp {
                                                 self.screen.toggle_pause();
                                             }
                                             Some(game::HudButton::Menu) => {
+                                                self.menu.set_best(self.best);
                                                 self.state = AppState::Menu;
                                             }
                                             None => self.screen.pointer_down(at.x, at.y),
@@ -390,6 +414,7 @@ impl ApplicationHandler for GameApp {
                             if let Some(at) = self.last_cursor {
                                 match self.state {
                                     AppState::Menu => {
+                                        self.menu.set_best(self.best);
                                         self.menu.pointer_up(at.x, at.y);
                                         self.maybe_start_game();
                                     }
@@ -430,6 +455,7 @@ impl ApplicationHandler for GameApp {
                     winit::event::TouchPhase::Ended | winit::event::TouchPhase::Cancelled => {
                         match self.state {
                             AppState::Menu => {
+                                self.menu.set_best(self.best);
                                 self.menu.pointer_up(at.x, at.y);
                                 self.maybe_start_game();
                             }
@@ -457,6 +483,30 @@ pub fn run_desktop() -> Result<(), String> {
     event_loop
         .run_app(&mut GameApp::default())
         .map_err(|e| format!("run: {e}"))
+}
+
+/// Parse the persisted best score; anything unreadable is 0.
+#[must_use]
+fn parse_best(bytes: &[u8]) -> u64 {
+    let text = String::from_utf8_lossy(bytes);
+    let token = text.split_whitespace().next().unwrap_or("0");
+    let digits: String = token.chars().filter(|c| c.is_ascii_digit()).collect();
+    digits.parse::<u64>().unwrap_or(0)
+}
+
+/// Read the persisted best from `<dir>/highscore.txt` (0 when absent).
+fn read_best(dir: &std::path::Path) -> u64 {
+    let path = dir.join("highscore.txt");
+    match std::fs::read(&path) {
+        Ok(bytes) => parse_best(&bytes),
+        Err(_) => 0,
+    }
+}
+
+/// Persist the best when it grew.
+fn write_best(dir: &std::path::Path, best: u64) {
+    let path = dir.join("highscore.txt");
+    let _ = std::fs::write(path, format!("{best}\n"));
 }
 
 #[cfg(target_os = "android")]

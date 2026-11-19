@@ -140,6 +140,8 @@ pub struct GameScreen {
     last_pointer: Option<(f64, f64)>,
     /// Targets popped so far (base 1 per pop).
     score: u64,
+    /// Best score this device has seen (shown on the HUD).
+    best: u64,
     /// Consecutive pops inside [`COMBO_FRAMES`]: each pop scores
     /// `1 + combo`.
     combo: u64,
@@ -172,6 +174,7 @@ impl GameScreen {
             last_pointer: None,
             score: 0,
             combo: 0,
+            best: 0,
             last_pop: None,
         }
     }
@@ -656,8 +659,8 @@ impl GameScreen {
                 height: 20.0,
             },
             &format!(
-                "fresco game  balls {balls_n}  score {}  x{}",
-                self.score, self.combo
+                "balls {balls_n}  score {}  x{}  best {}",
+                self.score, self.combo, self.best
             ),
             14.0,
             [220, 224, 232, 255],
@@ -720,6 +723,11 @@ impl GameScreen {
     /// Set the fountain cadence from the menu difficulty.
     pub fn set_fountain_every(&mut self, frames: u64) {
         self.fountain_every = frames.max(1);
+    }
+
+    /// Show the persisted best on the HUD.
+    pub fn set_best(&mut self, best: u64) {
+        self.best = best;
     }
 
     /// Alive entity count (HUD + oracle use).

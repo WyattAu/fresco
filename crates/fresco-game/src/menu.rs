@@ -48,6 +48,7 @@ pub struct MenuScreen {
     colors: WidgetColors,
     play_ref: WidgetRef,
     difficulty_ref: WidgetRef,
+    best_ref: WidgetRef,
 }
 
 impl Default for MenuScreen {
@@ -84,6 +85,11 @@ impl MenuScreen {
             open: false,
         });
         tree.add_child(root, difficulty);
+        let best = tree.push(WidgetKind::Label {
+            text: "best 0".to_string(),
+            px_size: 13.0,
+        });
+        tree.add_child(root, best);
         let play = tree.push(WidgetKind::Button {
             label: "Play".to_string(),
             action: 1,
@@ -94,6 +100,7 @@ impl MenuScreen {
             colors: WidgetColors::default(),
             play_ref: play,
             difficulty_ref: difficulty,
+            best_ref: best,
         }
     }
 
@@ -122,6 +129,27 @@ impl MenuScreen {
     /// Whether the Play button activated since the last call.
     pub fn play_pressed(&mut self) -> bool {
         self.tree.take_actions().contains(&1)
+    }
+
+    /// Show the persisted best score on the best label.
+    pub fn set_best(&mut self, best: u64) {
+        if let Some(w) = self.tree.widget_mut(self.best_ref)
+            && let WidgetKind::Label { text, .. } = &mut w.kind
+        {
+            *text = format!("best {best}");
+        }
+    }
+
+    /// The best label's current text (oracle use).
+    #[must_use]
+    pub fn best_label(&self) -> String {
+        match self.tree.widget(self.best_ref) {
+            Some(w) => match &w.kind {
+                WidgetKind::Label { text, .. } => text.clone(),
+                _ => String::new(),
+            },
+            None => String::new(),
+        }
     }
 
     /// The selected difficulty.
@@ -177,6 +205,15 @@ mod tests {
         assert_eq!(Difficulty::Relaxed.fountain_every(), 30);
         assert_eq!(Difficulty::Frenzy.fountain_every(), 6);
         assert_eq!(Difficulty::Normal.fountain_every(), 15);
+    }
+
+    /// Oracle: set_best updates the best label.
+    #[test]
+    fn best_label_reflects_score() {
+        let mut menu = MenuScreen::new();
+        menu.resize(360, 740);
+        menu.set_best(7);
+        assert_eq!(menu.best_label(), "best 7", "label must show best");
     }
 
     /// Oracle: the menu paints deterministically.
