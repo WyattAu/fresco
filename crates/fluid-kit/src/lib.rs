@@ -8,6 +8,7 @@
 pub mod grid;
 pub mod slice;
 pub mod solver;
+pub mod sph;
 
 pub use grid::{Field, VelocityField};
 pub use solver::FluidSolver;
