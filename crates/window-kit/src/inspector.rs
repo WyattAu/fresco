@@ -69,6 +69,12 @@ pub struct Inspector {
 }
 
 impl Inspector {
+    /// The capture directory artifacts land in.
+    #[must_use]
+    pub fn dir(&self) -> &Path {
+        &self.dir
+    }
+
     /// Build from the environment:
     ///
     /// - `GATE_A_RECORD` (`1`/`true`/`on`): enable frame recording;

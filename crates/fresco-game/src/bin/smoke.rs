@@ -35,4 +35,21 @@ fn main() {
         frames,
         game.entity_count()
     );
+
+    // Menu evidence: one deterministic menu frame next to the game
+    // frames (same observability dir).
+    let mut menu = fresco_game::menu::MenuScreen::new();
+    menu.resize(360, 740);
+    let mut menu_surface = paint_kit::Surface::new(360, 740).unwrap_or_default();
+    let mut menu_painter = paint_kit::Painter::default();
+    menu.paint(&mut menu_surface, &mut menu_painter);
+    let dir = inspector.dir();
+    let path = dir.join("menu.bmp");
+    let _ = window_kit::inspector::write_bmp24(
+        &path,
+        menu_surface.data(),
+        menu_surface.width(),
+        menu_surface.height(),
+    );
+    println!("[fresco-game] menu evidence: {}", path.display());
 }
