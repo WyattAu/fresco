@@ -48,6 +48,10 @@ const FOUNTAIN_EVERY: u64 = 15;
 /// multiplier (3 s at 60 Hz).
 const COMBO_FRAMES: u64 = 180;
 
+/// Water line: distance from the viewport bottom to the SPH pool's
+/// surface (the basin is 150 px tall; the top 40 px are headroom).
+const WATER_LINE_OFFSET: f64 = 110.0;
+
 /// Tap burst size.
 const BURST: usize = 8;
 
@@ -393,7 +397,11 @@ impl GameScreen {
         }
 
         // Gravity (Verlet: shift pos, velocity stays implicit).
+        // Submerged balls get buoyancy (gravity cut to 30 percent)
+        // and linear drag - two-way coupling with the SPH pool.
         let g_dt2 = GRAVITY * DT * DT;
+        let water_line = self.height - WATER_LINE_OFFSET;
+        let drag = (1.0 - 2.5 * DT).clamp(0.3, 1.0);
         let touched: Vec<Entity> = self.world.query::<Ball>().map(|(e, _)| e).collect();
         for entity in &touched {
             if let Some(ball) = self.world.get_mut::<Ball>(*entity) {
@@ -401,7 +409,14 @@ impl GameScreen {
                     continue; // grabbed: pointer-carried, gravity skips
                 }
                 let p = ball.0.pos;
-                ball.0.pos = Vec2::new(p.x, p.y + g_dt2);
+                if p.y > water_line {
+                    let g_sub = g_dt2 * 0.3;
+                    ball.0.pos = Vec2::new(p.x, p.y + g_sub);
+                    let v = Vec2::new(ball.0.pos.x - ball.0.prev.x, ball.0.pos.y - ball.0.prev.y);
+                    ball.0.prev = Vec2::new(ball.0.pos.x - v.x * drag, ball.0.pos.y - v.y * drag);
+                } else {
+                    ball.0.pos = Vec2::new(p.x, p.y + g_dt2);
+                }
             }
         }
 
@@ -1155,6 +1170,41 @@ mod tests {
                 .iter()
                 .any(|&(x, y)| (x - 120.0).abs() < 1.0 && (y - 200.0).abs() < 1.0),
             "player must sit at the pointer: {centers:?}"
+        );
+    }
+
+    /// Oracle: submerged balls fall slower than dry ones - buoyancy
+    /// and drag slow the wet ball's descent through the pool.
+    #[test]
+    fn pool_slows_submerged_balls() {
+        let mut game = GameScreen::new();
+        game.resize(360, 740);
+        game.step();
+        let water_line = game.height - WATER_LINE_OFFSET;
+        // 10 px BELOW the line: submerged from the first step.
+        let wet_y = water_line + 10.0;
+        game.spawn(Vec2::new(90.0, wet_y), Vec2::ZERO);
+        game.spawn(Vec2::new(270.0, 150.0), Vec2::ZERO);
+        for _ in 0..30 {
+            game.step();
+        }
+        let mut wet_fall = 0.0;
+        let mut dry_fall = 0.0;
+        for (x, y) in game.ball_centers() {
+            if (x - 90.0).abs() < 12.0 {
+                wet_fall = y - wet_y;
+            }
+            if (x - 270.0).abs() < 12.0 {
+                dry_fall = y - 150.0;
+            }
+        }
+        assert!(
+            wet_fall > 0.0 && dry_fall > 0.0,
+            "both balls must have fallen: wet {wet_fall:.0} dry {dry_fall:.0}"
+        );
+        assert!(
+            dry_fall > wet_fall * 2.0,
+            "water must slow the wet ball: dry {dry_fall:.0} vs wet {wet_fall:.0}"
         );
     }
 
