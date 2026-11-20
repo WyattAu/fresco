@@ -156,6 +156,10 @@ pub struct GameScreen {
     /// clip, rendered as a stick figure.
     dancer_joints: Vec<Joint>,
     dancer: Animator,
+    /// The dancer's skinned body: a vertex strip auto-rigged to the
+    /// joints, posed each frame and drawn as filled triangles.
+    dancer_skin: three_kit::skin::Skin,
+    dancer_base: three_kit::Mesh,
     walls: [StaticBox; 4],
     width: f64,
     height: f64,
@@ -194,6 +198,58 @@ impl GameScreen {
     /// first resize.
     #[must_use]
     pub fn new() -> Self {
+        let dancer_joints = vec![
+            // Root (hip): the base position is added at render.
+            Joint {
+                parent: None,
+                local: three_kit::Mat4::translate(Vec3::new(0.0, 0.0, 0.0)),
+            },
+            // Torso: 28 px above the hip.
+            Joint {
+                parent: Some(0),
+                local: three_kit::Mat4::translate(Vec3::new(0.0, -28.0, 0.0)),
+            },
+            // Arm: 26 px above the torso.
+            Joint {
+                parent: Some(1),
+                local: three_kit::Mat4::translate(Vec3::new(0.0, -26.0, 0.0)),
+            },
+        ];
+        let dancer_base = {
+            // A vertical strip hanging from the hip origin: 2 columns
+            // x 9 rows, spanning 80 px of bone length.
+            let mut verts: Vec<three_kit::Vec3> = Vec::new();
+            let mut faces: Vec<[u32; 3]> = Vec::new();
+            let rows = 9_u32;
+            for r in 0..rows {
+                for c in 0..2_u32 {
+                    let x = if c == 0 { -8.0 } else { 8.0 };
+                    let y = -10.0 * f64::from(r);
+                    verts.push(three_kit::Vec3::new(x, y, 0.0));
+                }
+            }
+            for r in 0..rows - 1 {
+                let base = r * 2;
+                faces.push([base, base + 1, base + 2]);
+                faces.push([base + 1, base + 3, base + 2]);
+            }
+            three_kit::Mesh { verts, faces }
+        };
+        let dancer_skin = three_kit::skin::Skin::bind_nearest(&dancer_base, &dancer_joints);
+        let dancer = match three_kit::anim_text::import_clip(DANCER_DOC) {
+            Some(clip) => {
+                let mut a = Animator::new(clip);
+                a.play();
+                a
+            }
+            None => {
+                // Fixed valid text cannot fail; the fallback is a
+                // static bind-pose figure.
+                let mut a = Animator::new(AnimationClip::new("idle", 2.0, Vec::new()));
+                a.play();
+                a
+            }
+        };
         GameScreen {
             world: World::new(),
             atlas: crate::atlas::game_atlas(),
@@ -203,37 +259,10 @@ impl GameScreen {
                 fluid_kit::sph::SphParams::default(),
             ),
             pool_filled: false,
-            dancer_joints: vec![
-                // Root (hip): the base position is added at render.
-                Joint {
-                    parent: None,
-                    local: three_kit::Mat4::translate(Vec3::new(0.0, 0.0, 0.0)),
-                },
-                // Torso: 28 px above the hip.
-                Joint {
-                    parent: Some(0),
-                    local: three_kit::Mat4::translate(Vec3::new(0.0, -28.0, 0.0)),
-                },
-                // Arm: 26 px above the torso.
-                Joint {
-                    parent: Some(1),
-                    local: three_kit::Mat4::translate(Vec3::new(0.0, -26.0, 0.0)),
-                },
-            ],
-            dancer: match three_kit::anim_text::import_clip(DANCER_DOC) {
-                Some(clip) => {
-                    let mut a = Animator::new(clip);
-                    a.play();
-                    a
-                }
-                None => {
-                    // Fixed valid text cannot fail; the fallback is a
-                    // static bind-pose figure.
-                    let mut a = Animator::new(AnimationClip::new("idle", 2.0, Vec::new()));
-                    a.play();
-                    a
-                }
-            },
+            dancer_joints,
+            dancer_base,
+            dancer_skin,
+            dancer,
             walls: [StaticBox::new(Vec2::ZERO, Vec2::ZERO); 4],
             width: 0.0,
             height: 0.0,
@@ -814,6 +843,37 @@ impl GameScreen {
                 joints_px.push((base_x + x, base_y + y));
             }
         }
+        // Skinned body: posed triangles through the raster path,
+        // drawn under the bones.
+        let posed = self
+            .dancer_skin
+            .posed_mesh(&self.dancer_base, &self.dancer.pose(&self.dancer_joints));
+        let mut polys: Vec<path_kit::Poly> = Vec::new();
+        for face in &posed.faces {
+            let mut points: Vec<Vec2> = Vec::new();
+            for idx in face {
+                if let Some(v) = posed.verts.get(usize::try_from(*idx).unwrap_or(usize::MAX)) {
+                    // Model space -> screen: base offset (hip origin).
+                    points.push(Vec2::new(base_x + v.x, base_y + v.y));
+                }
+            }
+            if points.len() == 3 {
+                polys.push(path_kit::Poly {
+                    points,
+                    closed: true,
+                });
+            }
+        }
+        if !polys.is_empty() {
+            painter.fill_polys(
+                surface,
+                &polys,
+                path_kit::Affine::IDENTITY,
+                paint_kit::FillRule::NonZero,
+                &paint_kit::Paint::from(paint_kit::Solid::premul([175, 185, 210, 190])),
+            );
+        }
+
         // Bones: white stamps along each parent-child segment.
         for pair in joints_px.windows(2) {
             let (Some(&(ax, ay)), Some(&(bx, by))) = (pair.first(), pair.last()) else {
@@ -974,6 +1034,16 @@ impl GameScreen {
     #[must_use]
     pub const fn dancer_time(&self) -> f64 {
         self.dancer.time()
+    }
+
+    /// The skinned body's posed vertex positions, relative to the
+    /// dancer base (oracle use).
+    #[must_use]
+    pub fn dancer_body_verts(&self) -> Vec<(f64, f64)> {
+        let posed = self
+            .dancer_skin
+            .posed_mesh(&self.dancer_base, &self.dancer.pose(&self.dancer_joints));
+        posed.verts.iter().map(|v| (v.x, v.y)).collect()
     }
 
     /// The arm joint's world position (oracle use).
@@ -1313,6 +1383,33 @@ mod tests {
                 .any(|&(x, y)| (x - 120.0).abs() < 1.0 && (y - 200.0).abs() < 1.0),
             "player must sit at the pointer: {centers:?}"
         );
+    }
+
+    /// Oracle: the skinned body deforms with the skeleton - posed
+    /// vertices move over time and stay near the dancer.
+    #[test]
+    fn skinned_body_deforms() {
+        let mut game = GameScreen::new();
+        game.resize(360, 740);
+        let start = game.dancer_body_verts();
+        assert!(!start.is_empty(), "body must have vertices");
+        for _ in 0..30 {
+            game.step();
+        }
+        let now = game.dancer_body_verts();
+        assert_eq!(start.len(), now.len(), "vertex count must persist");
+        let moved = start
+            .iter()
+            .zip(now.iter())
+            .map(|((ax, ay), (bx, by))| ((ax - bx).powi(2) + (ay - by).powi(2)).sqrt())
+            .fold(0.0_f64, f64::max);
+        assert!(moved > 0.5, "skinned verts must deform: {moved:.2} px");
+        for (x, y) in &now {
+            assert!(
+                x.abs() < 200.0 && y.abs() < 200.0,
+                "skinned vert exploded: ({x:.0},{y:.0})"
+            );
+        }
     }
 
     /// Oracle: the dancer rides the imported clip - the playhead
