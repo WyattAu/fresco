@@ -729,6 +729,7 @@ dependencies = [
  "path-kit",
  "phys-kit",
  "softbuffer",
+ "three-kit",
  "widget-kit",
  "window-kit",
  "winit",

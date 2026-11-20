@@ -127,6 +127,12 @@ impl Animator {
         self.time
     }
 
+    /// The played clip's name.
+    #[must_use]
+    pub fn clip_name(&self) -> String {
+        self.clip.name.clone()
+    }
+
     /// Whether playback is running.
     #[must_use]
     pub const fn is_playing(&self) -> bool {

@@ -16,6 +16,8 @@ use ecs_kit::{Entity, World};
 use path_kit::Vec2;
 use phys_kit::Particle;
 use phys_kit::collision::StaticBox;
+use three_kit::animation::{AnimationClip, Animator};
+use three_kit::{Joint, Mat4, Vec3};
 use widget_kit::WidgetColors;
 
 /// Fixed simulation step (seconds). The render loop accumulates wall
@@ -51,6 +53,26 @@ const COMBO_FRAMES: u64 = 180;
 /// Water line: distance from the viewport bottom to the SPH pool's
 /// surface (the basin is 150 px tall; the top 40 px are headroom).
 const WATER_LINE_OFFSET: f64 = 110.0;
+
+/// The dancer's clip document, parsed through the M8.1 importer at
+/// construction (dogfoods the animation text loader).
+const DANCER_DOC: &str = "# idle sway: hip, torso, arm
+clip dance 2.0
+track 0 z
+key 0.0 -0.2
+key 1.0 0.2
+key 2.0 -0.2
+track 1 z
+key 0.0 0.15
+key 1.0 -0.15
+key 2.0 0.15
+track 2 z
+key 0.0 0.6
+key 0.5 -0.9
+key 1.0 0.6
+key 1.5 -0.9
+key 2.0 0.6
+";
 
 /// Tap burst size.
 const BURST: usize = 8;
@@ -130,6 +152,10 @@ pub struct GameScreen {
     /// independent of the ECS balls.
     pool: fluid_kit::sph::SphSystem,
     pool_filled: bool,
+    /// The dancing skeleton (M8): three joints driven by an imported
+    /// clip, rendered as a stick figure.
+    dancer_joints: Vec<Joint>,
+    dancer: Animator,
     walls: [StaticBox; 4],
     width: f64,
     height: f64,
@@ -177,6 +203,37 @@ impl GameScreen {
                 fluid_kit::sph::SphParams::default(),
             ),
             pool_filled: false,
+            dancer_joints: vec![
+                // Root (hip): the base position is added at render.
+                Joint {
+                    parent: None,
+                    local: three_kit::Mat4::translate(Vec3::new(0.0, 0.0, 0.0)),
+                },
+                // Torso: 28 px above the hip.
+                Joint {
+                    parent: Some(0),
+                    local: three_kit::Mat4::translate(Vec3::new(0.0, -28.0, 0.0)),
+                },
+                // Arm: 26 px above the torso.
+                Joint {
+                    parent: Some(1),
+                    local: three_kit::Mat4::translate(Vec3::new(0.0, -26.0, 0.0)),
+                },
+            ],
+            dancer: match three_kit::anim_text::import_clip(DANCER_DOC) {
+                Some(clip) => {
+                    let mut a = Animator::new(clip);
+                    a.play();
+                    a
+                }
+                None => {
+                    // Fixed valid text cannot fail; the fallback is a
+                    // static bind-pose figure.
+                    let mut a = Animator::new(AnimationClip::new("idle", 2.0, Vec::new()));
+                    a.play();
+                    a
+                }
+            },
             walls: [StaticBox::new(Vec2::ZERO, Vec2::ZERO); 4],
             width: 0.0,
             height: 0.0,
@@ -615,6 +672,9 @@ impl GameScreen {
         self.pool.step(DT * 0.5);
         self.pool.step(DT * 0.5);
 
+        // Dancer playback rides the sim clock (freezes when paused).
+        self.dancer.advance(DT);
+
         // TTL reap + entity cap (balls only: targets persist; fx
         // particles carry a short per-entity Ttl override).
         let frame = self.sim_frame;
@@ -729,6 +789,61 @@ impl GameScreen {
             );
             if let Some(atlas) = self.atlas.as_ref() {
                 atlas.draw(painter, surface, "water", dst);
+            }
+        }
+
+        // Dancing skeleton: world-compose the joint chain, draw bones
+        // as white stamps and joints as player rings. Base position:
+        // left side, above the pool.
+        let poses = self.dancer.pose(&self.dancer_joints);
+        let mut worlds: Vec<Mat4> = Vec::new();
+        for (i, joint) in self.dancer_joints.iter().enumerate() {
+            let local = poses.get(i).copied().unwrap_or(joint.local);
+            let w = match joint.parent.and_then(|p| worlds.get(p)) {
+                Some(parent_w) => parent_w.mul(&local),
+                None => local,
+            };
+            worlds.push(w);
+        }
+        let base_x = 80.0;
+        let base_y = self.height * 0.4;
+        let mut joints_px: Vec<(f64, f64)> = Vec::new();
+        for w in &worlds {
+            let p = w.transform_point(three_kit::Vec3::ZERO);
+            if let Some((x, y, _z)) = p {
+                joints_px.push((base_x + x, base_y + y));
+            }
+        }
+        // Bones: white stamps along each parent-child segment.
+        for pair in joints_px.windows(2) {
+            let (Some(&(ax, ay)), Some(&(bx, by))) = (pair.first(), pair.last()) else {
+                continue;
+            };
+            let steps = 8;
+            for k in 0..steps {
+                let t = f64::from(u32::try_from(k).unwrap_or(0))
+                    / f64::from(u32::try_from(steps).unwrap_or(1));
+                let px = ax + (bx - ax) * t;
+                let py = ay + (by - ay) * t;
+                painter.fill_rect(
+                    surface,
+                    paint_kit::Rect::from_size(Vec2::new(px - 1.5, py - 1.5), Vec2::new(3.0, 3.0)),
+                    &paint_kit::Paint::from(paint_kit::Solid::premul([230, 232, 240, 255])),
+                );
+            }
+        }
+        // Joint dots: player-ring sprites.
+        for (jx, jy) in &joints_px {
+            if let Some(atlas) = self.atlas.as_ref() {
+                atlas.draw(
+                    painter,
+                    surface,
+                    "player",
+                    paint_kit::Rect::from_size(
+                        Vec2::new(jx - 5.0, jy - 5.0),
+                        Vec2::new(10.0, 10.0),
+                    ),
+                );
             }
         }
 
@@ -847,6 +962,33 @@ impl GameScreen {
     #[must_use]
     pub const fn view_height(&self) -> f64 {
         self.height
+    }
+
+    /// The dancer's clip name (oracle: the M8.1 loader fed it).
+    #[must_use]
+    pub fn dancer_clip_name(&self) -> String {
+        self.dancer.clip_name()
+    }
+
+    /// The dancer's current playhead (oracle use).
+    #[must_use]
+    pub const fn dancer_time(&self) -> f64 {
+        self.dancer.time()
+    }
+
+    /// The arm joint's world position (oracle use).
+    #[must_use]
+    pub fn dancer_arm_tip(&self) -> (f64, f64) {
+        let poses = self.dancer.pose(&self.dancer_joints);
+        let mut world = three_kit::Mat4::translate(Vec3::new(80.0, self.height * 0.4, 0.0));
+        for (i, joint) in self.dancer_joints.iter().enumerate() {
+            let local = poses.get(i).copied().unwrap_or(joint.local);
+            world = world.mul(&local);
+        }
+        match world.transform_point(three_kit::Vec3::ZERO) {
+            Some((x, y, _)) => (x, y),
+            None => (80.0, self.height * 0.4),
+        }
     }
 
     /// Whole sim frames stepped (oracle use).
@@ -1171,6 +1313,24 @@ mod tests {
                 .any(|&(x, y)| (x - 120.0).abs() < 1.0 && (y - 200.0).abs() < 1.0),
             "player must sit at the pointer: {centers:?}"
         );
+    }
+
+    /// Oracle: the dancer rides the imported clip - the playhead
+    /// advances and the arm tip swings (skeletal playback through
+    /// the M8.1 loader).
+    #[test]
+    fn dancer_animates_from_imported_clip() {
+        let mut game = GameScreen::new();
+        game.resize(360, 740);
+        assert_eq!(game.dancer_clip_name(), "dance", "clip must be imported");
+        let (x0, y0) = game.dancer_arm_tip();
+        for _ in 0..30 {
+            game.step();
+        }
+        assert!(game.dancer_time() > 0.0, "playhead must advance");
+        let (x1, y1) = game.dancer_arm_tip();
+        let moved = ((x1 - x0).powi(2) + (y1 - y0).powi(2)).sqrt();
+        assert!(moved > 1.0, "arm tip must swing: {moved:.1} px");
     }
 
     /// Oracle: submerged balls fall slower than dry ones - buoyancy
