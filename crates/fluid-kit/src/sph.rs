@@ -129,6 +129,12 @@ impl SphSystem {
         &self.particles
     }
 
+    /// Mutable particle slice (external coupling: game bodies push
+    /// the fluid).
+    pub fn particles_mut(&mut self) -> &mut [SphParticle] {
+        &mut self.particles
+    }
+
     /// One fixed step: gravity, density, pressure + viscosity forces,
     /// integration, wall clamp. Deterministic under a fixed dt.
     pub fn step(&mut self, dt: f64) {

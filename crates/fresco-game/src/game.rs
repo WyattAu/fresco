@@ -560,6 +560,42 @@ impl GameScreen {
             }
         }
 
+        // Ball -> pool coupling: moving balls push nearby SPH
+        // particles (splashes). One-way: the fluid answers the game,
+        // the game does not feel the fluid.
+        let splashers: Vec<(Vec2, f64, Vec2)> = self
+            .world
+            .query2::<Ball, Radius>()
+            .into_iter()
+            .filter_map(|(e, (b, r))| {
+                if self.world.get::<Target>(e).is_some() {
+                    return None; // targets are fixtures, not splashing
+                }
+                let vel = Vec2::new((b.0.pos.x - b.0.prev.x) / DT, (b.0.pos.y - b.0.prev.y) / DT);
+                Some((b.0.pos, r.0, vel))
+            })
+            .collect();
+        for p in self.pool.particles_mut() {
+            for (bpos, brad, bvel) in &splashers {
+                let dx = p.pos.x - bpos.x;
+                let dy = p.pos.y - bpos.y;
+                let reach = brad + 16.0;
+                let d2 = dx * dx + dy * dy;
+                if d2 >= reach * reach {
+                    continue;
+                }
+                let speed = (bvel.x * bvel.x + bvel.y * bvel.y).sqrt();
+                if speed < 50.0 {
+                    continue; // resting balls do not churn the pool
+                }
+                let d = d2.sqrt().max(1.0);
+                let falloff = 1.0 - d / reach;
+                let push = (speed * 0.5 * falloff).min(600.0);
+                let inv = 1.0 / d;
+                p.vel.x += dx * inv * push * DT * 30.0;
+                p.vel.y += dy * inv * push * DT * 30.0;
+            }
+        }
         // SPH pool: two half-steps per sim frame for stability.
         self.pool.step(DT * 0.5);
         self.pool.step(DT * 0.5);
@@ -959,6 +995,43 @@ mod tests {
             game.entity_count(),
             before + BURST + 1,
             "tap spawns BURST + player"
+        );
+    }
+
+    /// Oracle: a ball plunging into the basin splashes the pool.
+    #[test]
+    fn balls_splash_pool() {
+        let mut game = GameScreen::new();
+        game.resize(360, 740);
+        for _ in 0..400 {
+            game.step(); // pool settles from the fill drop
+        }
+        let calm: f64 = game
+            .pool
+            .particles()
+            .iter()
+            .map(|p| p.vel.x * p.vel.x + p.vel.y * p.vel.y)
+            .fold(0.0_f64, f64::max)
+            .sqrt();
+        // Drop a burst right above the basin and let it land + sink;
+        // track the peak churn (the splash is a transient spike).
+        game.pointer_down(180.0, 480.0);
+        let mut peak = calm;
+        for _ in 0..60 {
+            game.step();
+            let now: f64 = game
+                .pool
+                .particles()
+                .iter()
+                .map(|p| p.vel.x * p.vel.x + p.vel.y * p.vel.y)
+                .fold(0.0_f64, f64::max)
+                .sqrt();
+            peak = peak.max(now);
+        }
+        let splashed = peak;
+        assert!(
+            splashed > calm + 80.0,
+            "plunge must churn the pool: calm {calm:.0} vs peak {splashed:.0}"
         );
     }
 
