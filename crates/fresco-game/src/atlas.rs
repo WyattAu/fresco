@@ -98,9 +98,34 @@ fn target_sprite() -> Option<Image> {
     Image::new(S, S, data)
 }
 
+/// The water sprite: small blue disc for SPH pool particles.
+fn water_sprite() -> Option<Image> {
+    let mut data = Vec::with_capacity(16 * 16 * 4);
+    for y in 0..16 {
+        for x in 0..16 {
+            let xf = f64::from(u32::try_from(x).unwrap_or(0)) + 0.5;
+            let yf = f64::from(u32::try_from(y).unwrap_or(0)) + 0.5;
+            let d = ((xf - 8.0).powi(2) + (yf - 8.0).powi(2)).sqrt();
+            if d > 7.0 {
+                data.extend_from_slice(&[0, 0, 0, 0]);
+                continue;
+            }
+            let shade = 1.0 - 0.4 * (d / 7.0) * (d / 7.0);
+            data.extend_from_slice(&[
+                (70.0 * shade).round() as u8,
+                (140.0 * shade).round() as u8,
+                (220.0 * shade).round() as u8,
+                255,
+            ]);
+        }
+    }
+    Image::new(16, 16, data)
+}
+
 /// Build the game atlas: "ball0".."ball5" per palette color plus
-/// "player" and "target". Returns `None` only on packer overflow
-/// (fixed sprite count in a fixed 128x128 atlas cannot overflow).
+/// "player", "target", and "water". Returns `None` only on packer
+/// overflow (fixed sprite count in a fixed 128x128 atlas cannot
+/// overflow).
 #[must_use]
 pub fn game_atlas() -> Option<SpriteAtlas> {
     let mut atlas = SpriteAtlas::new(128, 128)?;
@@ -112,6 +137,7 @@ pub fn game_atlas() -> Option<SpriteAtlas> {
     atlas.pack("player", &player_sprite()?)?;
     let target = target_sprite()?;
     atlas.pack("target", &target)?;
+    atlas.pack("water", &water_sprite()?)?;
     Some(atlas)
 }
 
@@ -143,7 +169,7 @@ mod tests {
         assert!(a.is_some() && b.is_some(), "atlas build must succeed");
         if let (Some(a), Some(b)) = (a, b) {
             assert_eq!(a.image().data, b.image().data, "atlas bytes differ");
-            assert_eq!(a.sprite_count(), 8, "6 balls + player + target");
+            assert_eq!(a.sprite_count(), 9, "6 balls + player + target + water");
         }
     }
 

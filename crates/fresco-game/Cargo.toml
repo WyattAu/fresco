@@ -18,6 +18,7 @@ window-kit = { workspace = true }
 path-kit = { workspace = true }
 ecs-kit = { workspace = true }
 phys-kit = { workspace = true }
+fluid-kit = { workspace = true }
 softbuffer = "0.4"
 
 [target.'cfg(target_os = "android")'.dependencies]

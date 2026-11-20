@@ -30,6 +30,7 @@ repository = "https://github.com/WyattAu/fresco"
 [workspace.dependencies]
 path-kit = { path = "crates/path-kit", version = "0.8.7" }
 phys-kit = { path = "crates/phys-kit", version = "0.8.7" }
+fluid-kit = { path = "crates/fluid-kit", version = "0.8.7" }
 ecs-kit = { path = "crates/ecs-kit", version = "0.8.7" }
 three-kit = { path = "crates/three-kit", version = "0.8.7" }
 anim-kit = { path = "crates/anim-kit", version = "0.8.7" }

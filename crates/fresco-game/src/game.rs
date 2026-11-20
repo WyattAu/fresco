@@ -122,6 +122,10 @@ pub fn hud_button_at(width: f64, height: f64, x: f64, y: f64) -> Option<HudButto
 pub struct GameScreen {
     world: World,
     atlas: Option<paint_kit::atlas::SpriteAtlas>,
+    /// SPH water pool (fluid-kit M7): sits in a basin at the bottom,
+    /// independent of the ECS balls.
+    pool: fluid_kit::sph::SphSystem,
+    pool_filled: bool,
     walls: [StaticBox; 4],
     width: f64,
     height: f64,
@@ -163,6 +167,12 @@ impl GameScreen {
         GameScreen {
             world: World::new(),
             atlas: crate::atlas::game_atlas(),
+            pool: fluid_kit::sph::SphSystem::new(
+                Vec2::ZERO,
+                Vec2::ZERO,
+                fluid_kit::sph::SphParams::default(),
+            ),
+            pool_filled: false,
             walls: [StaticBox::new(Vec2::ZERO, Vec2::ZERO); 4],
             width: 0.0,
             height: 0.0,
@@ -185,6 +195,19 @@ impl GameScreen {
         self.width = f64::from(u32::try_from(width.max(1)).unwrap_or(1));
         self.height = f64::from(u32::try_from(height.max(1)).unwrap_or(1));
         let (w, h) = (self.width, self.height);
+        // SPH basin: bottom strip of the viewport; particles are
+        // filled once on the first real resize.
+        self.pool = fluid_kit::sph::SphSystem::new(
+            Vec2::new(8.0, h - 150.0),
+            Vec2::new(w - 8.0, h - 8.0),
+            fluid_kit::sph::SphParams::default(),
+        );
+        if !self.pool_filled {
+            let n = self.pool.fill_disc(Vec2::new(w * 0.5, h - 80.0), 55.0, 9.0);
+            if n > 0 {
+                self.pool_filled = true;
+            }
+        }
         self.walls = [
             // Left: straddles x = WALL.
             StaticBox::new(Vec2::new(-20.0, -20.0), Vec2::new(WALL, h + 20.0)),
@@ -537,6 +560,10 @@ impl GameScreen {
             }
         }
 
+        // SPH pool: two half-steps per sim frame for stability.
+        self.pool.step(DT * 0.5);
+        self.pool.step(DT * 0.5);
+
         // TTL reap + entity cap (balls only: targets persist; fx
         // particles carry a short per-entity Ttl override).
         let frame = self.sim_frame;
@@ -640,6 +667,17 @@ impl GameScreen {
                     r,
                     &paint_kit::Paint::from(paint_kit::Solid::premul(tile_color(tile.0))),
                 );
+            }
+        }
+
+        // SPH water pool: one sprite per particle.
+        for p in self.pool.particles() {
+            let dst = paint_kit::Rect::from_size(
+                Vec2::new(p.pos.x - 4.0, p.pos.y - 4.0),
+                Vec2::new(8.0, 8.0),
+            );
+            if let Some(atlas) = self.atlas.as_ref() {
+                atlas.draw(painter, surface, "water", dst);
             }
         }
 
@@ -922,6 +960,29 @@ mod tests {
             before + BURST + 1,
             "tap spawns BURST + player"
         );
+    }
+
+    /// Oracle: the SPH pool stays inside its basin.
+    #[test]
+    fn pool_stays_in_basin() {
+        let mut game = GameScreen::new();
+        game.resize(360, 740);
+        assert!(game.pool_filled, "first resize must fill the pool");
+        for _ in 0..300 {
+            game.step();
+        }
+        for p in game.pool.particles() {
+            assert!(
+                p.pos.x >= 8.0 && p.pos.x <= 352.0,
+                "pool x out of basin: {}",
+                p.pos.x
+            );
+            assert!(
+                p.pos.y >= 590.0 && p.pos.y <= 732.0,
+                "pool y out of basin: {}",
+                p.pos.y
+            );
+        }
     }
 
     /// Oracle: pops inside the combo window chain (1 + 2 points);
