@@ -7,6 +7,8 @@
 
 pub mod anim_text;
 pub mod animation;
+pub mod gltf;
+pub mod json;
 pub mod math;
 pub mod mesh;
 pub mod obj;
