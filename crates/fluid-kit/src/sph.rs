@@ -19,8 +19,17 @@ pub struct SphParams {
     pub rest_density: f64,
     /// Pressure stiffness: p = k * (rho - rho0), clamped >= 0.
     pub stiffness: f64,
-    /// Viscosity coefficient.
-    pub viscosity: f64,
+    /// XSPH velocity-smoothing strength in [0, 1]: fast particles
+    /// are pulled toward their neighbors' average velocity. Bevy's
+    /// sph examples use the same smoothing idea; 0 disables.
+    pub xsph: f64,
+    /// CFL time-step safety factor: dt is clamped to
+    /// `cfl * h / max_speed` before integration.
+    pub cfl: f64,
+    /// Per-particle speed ceiling (px/s): compression spikes in
+    /// tight basins inject energy faster than pressure can shed it;
+    /// a hard ceiling makes the system dissipative-bounded.
+    pub max_speed: f64,
     /// Gravity (px/s²), screen y-down.
     pub gravity: Vec2,
     /// Wall restitution in [0, 1].
@@ -33,9 +42,11 @@ impl Default for SphParams {
             h: 16.0,
             rest_density: 6.0,
             stiffness: 40.0,
-            viscosity: 0.6,
+            xsph: 0.15,
             gravity: Vec2::new(0.0, 900.0),
             wall_restitution: 0.2,
+            cfl: 0.4,
+            max_speed: 2000.0,
         }
     }
 }
@@ -195,17 +206,11 @@ impl SphSystem {
                     let gp = spiky_grad(r, h);
                     f.x += dir.x * gp * pm;
                     f.y += dir.y * gp * pm;
-                    // Viscosity: Laplacian kernel, velocity difference.
-                    let vl = 45.0 / (std::f64::consts::PI * h6(h)) * (h - r);
-                    let dvx = pj.vel.x - pi.vel.x;
-                    let dvy = pj.vel.y - pi.vel.y;
-                    f.x += self.params.viscosity * dvx / rho_j * vl;
-                    f.y += self.params.viscosity * dvy / rho_j * vl;
                 }
                 // Acceleration clamp: a runaway force must not explode
                 // the pool (the oracle bounds particle speed).
                 let speed2 = f.x * f.x + f.y * f.y;
-                const MAX_ACC: f64 = 400_000.0;
+                const MAX_ACC: f64 = 100_000.0;
                 if speed2 > MAX_ACC * MAX_ACC {
                     let s = MAX_ACC / speed2.sqrt();
                     f = Vec2::new(f.x * s, f.y * s);
@@ -214,12 +219,28 @@ impl SphSystem {
             })
             .collect();
 
-        // Integration (semi-implicit Euler) + wall clamp.
+        // Integration (semi-implicit Euler) + wall clamp. CFL: dt
+        // clamps to cfl * h / max_speed so a fast particle cannot
+        // cross more than a fraction of the kernel radius per step
+        // (Bevy's FixedUpdate accumulator-clamp idea, applied to the
+        // SPH step).
+        let mut v_max = 1e-6_f64;
+        for p in &self.particles {
+            let s = (p.vel.x * p.vel.x + p.vel.y * p.vel.y).sqrt();
+            v_max = v_max.max(s);
+        }
+        let dt = dt.min(self.params.cfl * h / v_max);
         let rest = self.params.wall_restitution;
         let r = 2.0_f64; // wall skin
         for (p, a) in self.particles.iter_mut().zip(accel.iter()) {
             p.vel.x += (self.params.gravity.x + a.x) * dt;
             p.vel.y += (self.params.gravity.y + a.y) * dt;
+            let s = (p.vel.x * p.vel.x + p.vel.y * p.vel.y).sqrt();
+            if s > self.params.max_speed {
+                let k = self.params.max_speed / s;
+                p.vel.x *= k;
+                p.vel.y *= k;
+            }
             p.pos.x += p.vel.x * dt;
             p.pos.y += p.vel.y * dt;
             if p.pos.x < self.bounds_min.x + r {
@@ -239,11 +260,47 @@ impl SphSystem {
                 p.vel.y = -p.vel.y * rest;
             }
         }
-    }
-}
 
-fn h6(h: f64) -> f64 {
-    h.powi(6)
+        // XSPH velocity smoothing: fast particles are pulled toward
+        // their neighbors' average velocity (poly6-weighted). This
+        // damps interpenetration jitter without the near-zero effect
+        // the Laplacian viscosity had at these kernel scales.
+        if self.params.xsph > 0.0 {
+            // Snapshot positions + velocities: the smoothing reads
+            // neighbors' pre-pass state while writing back in place.
+            let positions: Vec<Vec2> = self.particles.iter().map(|p| p.pos).collect();
+            let velocities: Vec<Vec2> = self.particles.iter().map(|p| p.vel).collect();
+            let w0 = poly6(0.0, h).max(1e-12);
+            for (i, pi) in self.particles.iter_mut().enumerate() {
+                let mut sum = Vec2::ZERO;
+                for (j, (pj_pos, pj_vel)) in positions.iter().zip(velocities.iter()).enumerate() {
+                    if i == j {
+                        continue;
+                    }
+                    let dx = pi.pos.x - pj_pos.x;
+                    let dy = pi.pos.y - pj_pos.y;
+                    let r2 = dx * dx + dy * dy;
+                    if r2 < r2_max {
+                        let w = poly6(r2, h) / w0;
+                        sum.x += (pj_vel.x - pi.vel.x) * w;
+                        sum.y += (pj_vel.y - pi.vel.y) * w;
+                    }
+                }
+                pi.vel.x += self.params.xsph * sum.x;
+                pi.vel.y += self.params.xsph * sum.y;
+            }
+            // Re-clamp: XSPH re-adds velocity past the integration
+            // ceiling, so the exit state must be bounded too.
+            for p in &mut self.particles {
+                let s = (p.vel.x * p.vel.x + p.vel.y * p.vel.y).sqrt();
+                if s > self.params.max_speed {
+                    let k = self.params.max_speed / s;
+                    p.vel.x *= k;
+                    p.vel.y *= k;
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]

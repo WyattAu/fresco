@@ -196,9 +196,7 @@ impl GameApp {
             if score > self.best {
                 self.best = score;
                 self.screen.set_best(self.best);
-                if let Some(dir) = self.capture_dir.as_ref() {
-                    write_best(dir, self.best);
-                }
+                write_best(&persist_dir(), self.best);
             }
         }
 
@@ -312,7 +310,7 @@ impl ApplicationHandler for GameApp {
                 };
                 let dir = std::env::var("GATE_A_DIR").unwrap_or_else(|_| default_dir.to_owned());
                 self.capture_dir = Some(std::path::PathBuf::from(&dir));
-                self.best = read_best(std::path::Path::new(&dir));
+                self.best = read_best(&persist_dir());
                 self.screen.set_best(self.best);
                 self.menu.set_best(self.best);
                 self.inspector = Some(Inspector::with_dir(
@@ -379,6 +377,44 @@ impl ApplicationHandler for GameApp {
             }
             // Desktop mouse: route press/release through the tracked
             // cursor (winit MouseInput carries no position).
+            // Menu keyboard a11y: Tab/arrows navigate, Enter/Space
+            // activate (widget-kit key_nav + key_char machinery).
+            WindowEvent::KeyboardInput { event, .. } => {
+                if matches!(self.state, AppState::Menu)
+                    && event.state == winit::event::ElementState::Pressed
+                {
+                    use window_kit::event::NavKey;
+                    use winit::keyboard::NamedKey;
+                    match &event.logical_key {
+                        winit::keyboard::Key::Named(NamedKey::Tab) => {
+                            self.menu.key_nav(NavKey::Tab);
+                        }
+                        winit::keyboard::Key::Named(NamedKey::ArrowDown) => {
+                            self.menu.key_nav(NavKey::Down);
+                        }
+                        winit::keyboard::Key::Named(NamedKey::ArrowUp) => {
+                            self.menu.key_nav(NavKey::Up);
+                        }
+                        winit::keyboard::Key::Named(NamedKey::ArrowLeft) => {
+                            self.menu.key_nav(NavKey::Left);
+                        }
+                        winit::keyboard::Key::Named(NamedKey::ArrowRight) => {
+                            self.menu.key_nav(NavKey::Right);
+                        }
+                        winit::keyboard::Key::Named(NamedKey::Enter)
+                        | winit::keyboard::Key::Named(NamedKey::Space) => {
+                            self.menu.key_char('\n');
+                        }
+                        _ => {}
+                    }
+                    if self.menu.play_pressed() {
+                        let rate = self.menu.difficulty().fountain_every();
+                        self.screen = GameScreen::new();
+                        self.screen.set_fountain_every(rate);
+                        self.state = AppState::Game;
+                    }
+                }
+            }
             WindowEvent::MouseInput { state, button, .. } => {
                 if button == winit::event::MouseButton::Left {
                     match state {
@@ -485,6 +521,29 @@ pub fn run_desktop() -> Result<(), String> {
         .map_err(|e| format!("run: {e}"))
 }
 
+/// The persistence directory: Android internal app data (set into
+/// [`PERSIST_DIR`] from `android_main`), desktop XDG state, env
+/// override wins for tests. Deliberately SEPARATE from the trace
+/// capture dir - persistence must not die with trace rotation.
+#[must_use]
+fn persist_dir() -> std::path::PathBuf {
+    if let Some(p) = std::env::var_os("PERSIST_DIR") {
+        return std::path::PathBuf::from(p);
+    }
+    #[cfg(target_os = "android")]
+    if let Some(p) = PERSIST_DIR.get() {
+        return p.clone();
+    }
+    let home = std::env::var_os("HOME")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_default();
+    home.join(".local/state/fresco-game")
+}
+
+/// Android internal app data path, set once from `android_main`.
+#[cfg(target_os = "android")]
+static PERSIST_DIR: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
+
 /// Parse the persisted best score; anything unreadable is 0.
 #[must_use]
 fn parse_best(bytes: &[u8]) -> u64 {
@@ -523,6 +582,11 @@ mod android_entry {
     #[unsafe(no_mangle)]
     fn android_main(app: android_activity::AndroidApp) {
         println!("[fresco-game] android_main: starting game demo");
+        // Persistence home: the app's internal data dir (private,
+        // survives trace rotation).
+        if let Some(p) = app.internal_data_path() {
+            let _ = PERSIST_DIR.set(p);
+        }
         // Infallible by policy: a failed loop logs and lets the app
         // exit cleanly rather than crashing the process.
         let Ok(event_loop) = EventLoop::builder().with_android_app(app).build() else {

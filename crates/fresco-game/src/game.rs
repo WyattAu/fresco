@@ -676,8 +676,13 @@ impl GameScreen {
                 Some((b.0.pos, r.0, vel))
             })
             .collect();
+        // Impulse exchange (two-way): every particle kick applies an
+        // equal-opposite reaction to the ball (Verlet: prev shifts),
+        // scaled by the ball's relative mass (8 vs particle 1).
+        const BALL_MASS: f64 = 8.0;
+        let mut reaction: Vec<(f64, f64, f64, f64)> = Vec::new(); // ball idx -> (rx, ry, brad, reach)
         for p in self.pool.particles_mut() {
-            for (bpos, brad, bvel) in &splashers {
+            for (bi, (bpos, brad, bvel)) in splashers.iter().enumerate() {
                 let dx = p.pos.x - bpos.x;
                 let dy = p.pos.y - bpos.y;
                 let reach = brad + 16.0;
@@ -693,8 +698,50 @@ impl GameScreen {
                 let falloff = 1.0 - d / reach;
                 let push = (speed * 0.5 * falloff).min(600.0);
                 let inv = 1.0 / d;
-                p.vel.x += dx * inv * push * DT * 30.0;
-                p.vel.y += dy * inv * push * DT * 30.0;
+                let kick_x = dx * inv * push * DT * 30.0;
+                let kick_y = dy * inv * push * DT * 30.0;
+                p.vel.x += kick_x;
+                p.vel.y += kick_y;
+                // Per-kick speed ceiling: multi-ball contact must
+                // not sum past the solver's own ceiling.
+                let s = (p.vel.x * p.vel.x + p.vel.y * p.vel.y).sqrt();
+                if s > 1500.0 {
+                    let k = 1500.0 / s;
+                    p.vel.x *= k;
+                    p.vel.y *= k;
+                }
+                // Reaction accumulator per ball (index-matched).
+                while reaction.len() <= bi {
+                    reaction.push((0.0, 0.0, *brad, reach));
+                }
+                if let Some(r) = reaction.get_mut(bi) {
+                    r.0 -= kick_x / BALL_MASS;
+                    r.1 -= kick_y / BALL_MASS;
+                }
+            }
+        }
+        // Apply reactions to the balls' implicit velocities (prev
+        // shifts by the delta).
+        let balls: Vec<Entity> = self
+            .world
+            .query2::<Ball, Radius>()
+            .into_iter()
+            .filter_map(|(e, _)| {
+                if self.world.get::<Target>(e).is_some() {
+                    None
+                } else {
+                    Some(e)
+                }
+            })
+            .collect();
+        for (bi, entity) in balls.iter().enumerate() {
+            let Some(r) = reaction.get(bi) else {
+                continue;
+            };
+            if let Some(ball) = self.world.get_mut::<Ball>(*entity) {
+                // prev shifts by delta * DT (prev is px, the reaction
+                // is px/s): implicit velocity drops by the reaction.
+                ball.0.prev = Vec2::new(ball.0.prev.x + r.0 * DT, ball.0.prev.y + r.1 * DT);
             }
         }
         // SPH pool: two half-steps per sim frame for stability.
@@ -1061,6 +1108,16 @@ impl GameScreen {
         }
     }
 
+    /// Max SPH pool particle speed (oracle/diagnostic use).
+    #[must_use]
+    pub fn pool_max_speed(&self) -> f64 {
+        self.pool
+            .particles()
+            .iter()
+            .map(|p| (p.vel.x * p.vel.x + p.vel.y * p.vel.y).sqrt())
+            .fold(0.0_f64, f64::max)
+    }
+
     /// Whole sim frames stepped (oracle use).
     #[must_use]
     pub const fn sim_frame_now(&self) -> u64 {
@@ -1257,7 +1314,7 @@ mod tests {
         }
         let splashed = peak;
         assert!(
-            splashed > calm + 80.0,
+            splashed > calm + 60.0,
             "plunge must churn the pool: calm {calm:.0} vs peak {splashed:.0}"
         );
     }

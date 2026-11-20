@@ -120,6 +120,18 @@ impl MenuScreen {
     /// Pointer move: no menu widgets track hover yet.
     pub fn pointer_move(&mut self, _x: f64, _y: f64) {}
 
+    /// Keyboard navigation (a11y): Tab/arrows move focus and step
+    /// the select; Enter/Space activate the focused widget. Forwards
+    /// to the tree's focus machinery.
+    pub fn key_nav(&mut self, key: window_kit::event::NavKey) {
+        self.tree.key_nav(key);
+    }
+
+    /// Keyboard activation: Enter/Space on the focused button.
+    pub fn key_char(&mut self, ch: char) {
+        self.tree.key_char(ch);
+    }
+
     /// Pointer up: activates the pressed widget; drain the action
     /// queue afterward via [`Self::play_pressed`].
     pub fn pointer_up(&mut self, x: f64, y: f64) {
@@ -214,6 +226,38 @@ mod tests {
         menu.resize(360, 740);
         menu.set_best(7);
         assert_eq!(menu.best_label(), "best 7", "label must show best");
+    }
+
+    /// Oracle: keyboard a11y - Tab focuses the Play button and
+    /// Enter activates it (no pointer involved).
+    #[test]
+    fn keyboard_activates_play() {
+        let mut menu = MenuScreen::new();
+        menu.resize(360, 740);
+        use window_kit::event::NavKey;
+        menu.key_nav(NavKey::Tab); // focus the difficulty select
+        menu.key_nav(NavKey::Tab); // focus the Play button
+        assert!(!menu.play_pressed(), "focus alone does not activate");
+        menu.key_char('\n'); // Enter activates the focused button
+        assert!(menu.play_pressed(), "Enter must activate Play");
+    }
+
+    /// Oracle: keyboard arrows step the focused difficulty select.
+    #[test]
+    fn keyboard_steps_difficulty() {
+        use window_kit::event::NavKey;
+        let mut menu = MenuScreen::new();
+        menu.resize(360, 740);
+        menu.key_nav(NavKey::Tab); // focus the select (first focusable)
+        assert_eq!(menu.difficulty(), Difficulty::Normal);
+        menu.key_nav(NavKey::Down);
+        assert_eq!(
+            menu.difficulty(),
+            Difficulty::Frenzy,
+            "Down steps to Frenzy"
+        );
+        menu.key_nav(NavKey::Up);
+        assert_eq!(menu.difficulty(), Difficulty::Normal, "Up steps back");
     }
 
     /// Oracle: the menu paints deterministically.
