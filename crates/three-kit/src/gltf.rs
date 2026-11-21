@@ -8,9 +8,10 @@
 //!
 //! Deterministic: pure text/binary arithmetic, no environment state.
 
-use crate::json::{self};
-use crate::math::Vec3;
+use crate::json::{self, Json};
+use crate::math::{Mat4, Vec3};
 use crate::mesh::Mesh;
+use crate::skin::{Joint, Skin};
 
 /// Decode standard base64 (with padding) into bytes.
 #[must_use]
@@ -78,6 +79,28 @@ fn u32le(bytes: &[u8]) -> Option<u32> {
     ]))
 }
 
+/// Read every component of an accessor from the byte buffer.
+fn read_accessor(bytes: &[u8], doc: &Json, idx: usize) -> Option<Vec<f64>> {
+    let acc = doc.get("accessors")?.at(idx)?;
+    let bv = acc.get("bufferView")?.uint()?;
+    let view = doc.get("bufferViews")?.at(bv)?;
+    let view_off = view.get("byteOffset").and_then(|j| j.uint()).unwrap_or(0);
+    let byte_offset = acc.get("byteOffset").and_then(|j| j.uint()).unwrap_or(0);
+    let count = acc.get("count")?.uint()?;
+    let ctype = acc.get("componentType")?.uint()?;
+    let tname = acc.get("type")?.str_val()?;
+    let comps = match tname {
+        "SCALAR" => 1,
+        "VEC2" => 2,
+        "VEC3" => 3,
+        "VEC4" => 4,
+        "MAT4" => 16,
+        _ => return None,
+    };
+    let total = count.checked_mul(comps)?;
+    read_components(bytes, view_off + byte_offset, ctype, total)
+}
+
 /// Read `count` components of `component_type` starting at a byte
 /// offset, as f64 values.
 fn read_components(
@@ -87,22 +110,28 @@ fn read_components(
     count: usize,
 ) -> Option<Vec<f64>> {
     let mut out = Vec::with_capacity(count);
+    let size = match component_type {
+        5121 => 1,        // UNSIGNED_BYTE
+        5123 => 2,        // UNSIGNED_SHORT
+        5125 | 5126 => 4, // UNSIGNED_INT | FLOAT
+        _ => return None,
+    };
     let mut at = byte_offset;
     for _ in 0..count {
-        let chunk = bytes.get(at..at + 4)?;
+        let chunk = bytes.get(at..at + size)?;
         let v = match component_type {
             5126 => f64::from(f32le(chunk)?),   // FLOAT
             5121 => f64::from(*chunk.first()?), // UNSIGNED_BYTE
             5123 => {
-                let lo = *chunk.first()?;
-                let hi = *chunk.get(1)?;
+                let lo = chunk.first().copied()?;
+                let hi = chunk.get(1).copied()?;
                 f64::from(u16::from_le_bytes([lo, hi]))
             }
             5125 => f64::from(u32le(chunk)?),
             _ => return None,
         };
         out.push(v);
-        at += 4;
+        at += size;
     }
     Some(out)
 }
@@ -170,6 +199,382 @@ pub fn import_gltf_mesh(text: &str) -> Option<Mesh> {
         return None;
     }
     Some(Mesh { verts, faces })
+}
+
+/// Quaternion (x, y, z, w) to a rotation matrix (column-major).
+#[must_use]
+pub fn quat_mat4(x: f64, y: f64, z: f64, w: f64) -> Mat4 {
+    let xx = x * x;
+    let yy = y * y;
+    let zz = z * z;
+    let xy = x * y;
+    let xz = x * z;
+    let yz = y * z;
+    let wx = w * x;
+    let wy = w * y;
+    let wz = w * z;
+    Mat4 {
+        m: [
+            1.0 - 2.0 * (yy + zz),
+            2.0 * (xy + wz),
+            2.0 * (xz - wy),
+            0.0, //
+            2.0 * (xy - wz),
+            1.0 - 2.0 * (xx + zz),
+            2.0 * (yz + wx),
+            0.0, //
+            2.0 * (xz + wy),
+            2.0 * (yz - wx),
+            1.0 - 2.0 * (xx + yy),
+            0.0, //
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+        ],
+    }
+}
+
+/// A node's local transform: `matrix` (16 floats, column-major) or
+/// TRS (translate, rotate quat, scale).
+#[must_use]
+fn node_local(node: &Json) -> Option<Mat4> {
+    if let Some(m) = node.get("matrix").and_then(|j| j.at(0)) {
+        // matrix is an ARRAY of 16 numbers.
+        let mut vals = [0.0_f64; 16];
+        for (i, slot) in vals.iter_mut().enumerate() {
+            *slot = m.at(i).and_then(|j| j.num()).unwrap_or(0.0);
+        }
+        return Some(Mat4 { m: vals });
+    }
+    let t = node.get("translation").map(|j| {
+        Vec3::new(
+            j.at(0).and_then(|x| x.num()).unwrap_or(0.0),
+            j.at(1).and_then(|x| x.num()).unwrap_or(0.0),
+            j.at(2).and_then(|x| x.num()).unwrap_or(0.0),
+        )
+    });
+    let s = node.get("scale").map(|j| {
+        Vec3::new(
+            j.at(0).and_then(|x| x.num()).unwrap_or(1.0),
+            j.at(1).and_then(|x| x.num()).unwrap_or(1.0),
+            j.at(2).and_then(|x| x.num()).unwrap_or(1.0),
+        )
+    });
+    let quat = node.get("rotation").map(|j| {
+        (
+            j.at(0).and_then(|x| x.num()).unwrap_or(0.0),
+            j.at(1).and_then(|x| x.num()).unwrap_or(0.0),
+            j.at(2).and_then(|x| x.num()).unwrap_or(0.0),
+            j.at(3).and_then(|x| x.num()).unwrap_or(1.0),
+        )
+    });
+    let (t, s, quat) = (t?, s?, quat?);
+    // TRS compose: translate * rotate(quat) * scale.
+    let scale_m = Mat4 {
+        m: [
+            s.x, 0.0, 0.0, 0.0, //
+            0.0, s.y, 0.0, 0.0, //
+            0.0, 0.0, s.z, 0.0, //
+            0.0, 0.0, 0.0, 1.0,
+        ],
+    };
+    let rot = quat_mat4(quat.0, quat.1, quat.2, quat.3);
+    Some(Mat4::translate(t).mul(&rot).mul(&scale_m))
+}
+
+/// Import mesh 0 primitive 0 WITH skinning: JOINTS_0/WEIGHTS_0
+/// attributes and skins[0] (inverseBindMatrices + joints referencing
+/// nodes). Returns the mesh and the constructed skin. The skin's
+/// joint locals come from the referenced nodes (`matrix` or TRS).
+#[must_use]
+pub fn import_gltf_skin(text: &str) -> Option<(Mesh, Skin)> {
+    let doc = json::parse(text)?;
+    let buffers = doc.get("buffers")?.at(0)?;
+    let uri = buffers.get("uri")?.str_val()?;
+    let bytes = base64_decode(strip_data_uri(uri))?;
+
+    // Mesh geometry.
+    let mesh0 = doc.get("meshes")?.at(0)?;
+    let prim = mesh0.get("primitives")?.at(0)?;
+    let attrs = prim.get("attributes")?;
+    let pos_idx = attrs.get("POSITION")?.uint()?;
+    let pos = read_accessor(&bytes, &doc, pos_idx)?;
+    let n_verts = pos.len() / 3;
+    if n_verts == 0 || pos.len() % 3 != 0 {
+        return None;
+    }
+    let verts: Vec<Vec3> = (0..n_verts)
+        .map(|i| {
+            let x = pos.get(i * 3).copied().unwrap_or(0.0);
+            let y = pos.get(i * 3 + 1).copied().unwrap_or(0.0);
+            let z = pos.get(i * 3 + 2).copied().unwrap_or(0.0);
+            Vec3::new(x, y, z)
+        })
+        .collect();
+
+    let mut faces: Vec<[u32; 3]> = Vec::new();
+    if let Some(idx_acc) = prim.get("indices").and_then(|j| j.uint()) {
+        let idx = read_accessor(&bytes, &doc, idx_acc)?;
+        let mut at = 0_usize;
+        while at + 2 < idx.len() {
+            let cv = |v: f64| u32::try_from(v as i64).unwrap_or(0);
+            faces.push([
+                cv(idx.get(at).copied().unwrap_or(0.0)),
+                cv(idx.get(at + 1).copied().unwrap_or(0.0)),
+                cv(idx.get(at + 2).copied().unwrap_or(0.0)),
+            ]);
+            at += 3;
+        }
+    }
+
+    // Joint locals from the referenced nodes.
+    let skin0 = doc.get("skins")?.at(0)?;
+    let joints_json = skin0.get("joints")?;
+    let mut joint_count = 0_usize;
+    while joints_json.at(joint_count).is_some() {
+        joint_count += 1;
+    }
+    if joint_count == 0 {
+        return None;
+    }
+    // Count nodes (contiguous from index 0).
+    let mut node_count = 0_usize;
+    while nodes_at(&doc, node_count).is_some() {
+        node_count += 1;
+    }
+    let node_at = |i: usize| -> Option<&Json> { nodes_at(&doc, i) };
+
+    let mut joints: Vec<Joint> = Vec::new();
+    for ji in 0..joint_count {
+        let node_idx = joints_json.at(ji).and_then(|j| j.uint())?;
+        let node = node_at(node_idx)?;
+        let local = node_local(node)?;
+        // Parent: the node that lists this one as a child; counted a
+        // root when the parent is not itself a joint.
+        let mut parent: Option<usize> = None;
+        for pi in 0..node_count {
+            let Some(pnode) = node_at(pi) else {
+                continue;
+            };
+            let Some(children) = pnode.get("children") else {
+                continue;
+            };
+            let mut ci = 0_usize;
+            let mut found = false;
+            while children.at(ci).is_some() {
+                if children.at(ci).and_then(|j| j.uint()) == Some(node_idx) {
+                    found = true;
+                }
+                ci += 1;
+            }
+            if found && parent.is_none() {
+                parent = Some(pi);
+            }
+        }
+        let in_joints = parent
+            .map(|p| (0..joint_count).any(|k| joints_json.at(k).and_then(|j| j.uint()) == Some(p)))
+            .unwrap_or(false);
+        joints.push(Joint {
+            parent: if in_joints { parent } else { None },
+            local,
+        });
+    }
+
+    // Inverse bind matrices.
+    let ibm_idx = skin0.get("inverseBindMatrices")?.uint()?;
+    let ibm = read_accessor(&bytes, &doc, ibm_idx)?;
+    if ibm.len() < joint_count.checked_mul(16)? {
+        return None;
+    }
+    let mut bind_worlds: Vec<Mat4> = Vec::new();
+    for j in 0..joint_count {
+        let mut m = [0.0_f64; 16];
+        for (k, slot) in m.iter_mut().enumerate() {
+            *slot = ibm.get(j * 16 + k).copied().unwrap_or(0.0);
+        }
+        bind_worlds.push(Mat4 { m });
+    }
+
+    // Bindings: JOINTS_0 (VEC4 u8/u16) + WEIGHTS_0 (VEC4 float),
+    // normalized; vertices with all-zero weights bind to joint 0.
+    let j_idx = attrs.get("JOINTS_0")?.uint()?;
+    let w_idx = attrs.get("WEIGHTS_0")?.uint()?;
+    let joint_comps = read_accessor(&bytes, &doc, j_idx)?;
+    let weight_comps = read_accessor(&bytes, &doc, w_idx)?;
+    let stride = 4_usize;
+    if joint_comps.len() != weight_comps.len() || joint_comps.len() != n_verts * stride {
+        return None;
+    }
+    let mut bindings: Vec<Vec<(usize, f64)>> = Vec::new();
+    for v in 0..n_verts {
+        let mut entries: Vec<(usize, f64)> = Vec::new();
+        for c in 0..stride {
+            let ji = joint_comps.get(v * stride + c).copied().unwrap_or(0.0);
+            let w = weight_comps.get(v * stride + c).copied().unwrap_or(0.0);
+            if w > 0.0 {
+                let ji = usize::try_from(ji as i64).unwrap_or(0);
+                entries.push((ji, w));
+            }
+        }
+        let total: f64 = entries.iter().map(|(_, w)| *w).sum();
+        if total <= 1e-9 {
+            entries = vec![(0, 1.0)];
+        } else {
+            for e in &mut entries {
+                e.1 /= total;
+            }
+        }
+        bindings.push(entries);
+    }
+
+    let mesh = Mesh { verts, faces };
+    let skin = Skin {
+        joints,
+        bindings,
+        bind_worlds,
+    };
+    Some((mesh, skin))
+}
+
+/// Node accessor helper (nodes are a contiguous top-level array).
+fn nodes_at(doc: &Json, i: usize) -> Option<&Json> {
+    doc.get("nodes")?.at(i)
+}
+
+#[cfg(test)]
+#[allow(clippy::indexing_slicing)]
+mod skin_tests {
+    use super::*;
+
+    /// Build a 2-joint, 3-vertex skinned document: joint 1 is a
+    /// child of joint 0 with a 5px offset; vertices 0/2 bind to
+    /// joint 0, vertex 1 to joint 1.
+    fn skin_doc() -> String {
+        // POSITION: (0,0,0) (1,0,0) (2,0,0) as f32 LE.
+        let mut pos_bytes: Vec<u8> = Vec::new();
+        for v in [0.0_f32, 1.0, 2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0] {
+            pos_bytes.extend_from_slice(&v.to_le_bytes());
+        }
+        // JOINTS_0: VEC4 u8 per vertex.
+        let joints_bytes: Vec<u8> = vec![0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0];
+        // WEIGHTS_0: VEC4 f32 per vertex (normalized).
+        let mut weights_bytes: Vec<u8> = Vec::new();
+        for w in [
+            1.0_f32, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0,
+        ] {
+            weights_bytes.extend_from_slice(&w.to_le_bytes());
+        }
+        // IBM: joint 0 identity; joint 1 translate (0, -5, 0).
+        let mut ibm_bytes: Vec<u8> = Vec::new();
+        for m in [Mat4::identity(), Mat4::translate(Vec3::new(0.0, -5.0, 0.0))] {
+            for v in m.m {
+                ibm_bytes.extend_from_slice(&v.to_le_bytes());
+            }
+        }
+        // INDICES: single triangle 0,1,2 as u32 LE.
+        let mut idx_bytes: Vec<u8> = Vec::new();
+        for i in [0_u32, 1, 2] {
+            idx_bytes.extend_from_slice(&i.to_le_bytes());
+        }
+        let mut buffer: Vec<u8> = Vec::new();
+        buffer.extend_from_slice(&pos_bytes);
+        buffer.extend_from_slice(&joints_bytes);
+        buffer.extend_from_slice(&weights_bytes);
+        buffer.extend_from_slice(&ibm_bytes);
+        buffer.extend_from_slice(&idx_bytes);
+        let enc = base64_encode(&buffer);
+        format!(
+            r#"{{"nodes":[{{"children":[1]}},{{"translation":[0.0,5.0,0.0]}},{{}}],
+             "skins":[{{"joints":[1,2],"inverseBindMatrices":3}}],
+             "meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"JOINTS_0":1,"WEIGHTS_0":2}},"indices":4}}]}}],
+             "accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}},
+                          {{"bufferView":1,"componentType":5121,"count":3,"type":"VEC4"}},
+                          {{"bufferView":2,"componentType":5126,"count":3,"type":"VEC4"}},
+                          {{"bufferView":3,"componentType":5126,"count":2,"type":"MAT4"}},
+                          {{"bufferView":4,"componentType":5125,"count":3,"type":"SCALAR"}}],
+             "bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":36}},
+                            {{"buffer":0,"byteOffset":36,"byteLength":12}},
+                            {{"buffer":0,"byteOffset":48,"byteLength":48}},
+                            {{"buffer":0,"byteOffset":96,"byteLength":128}},
+                            {{"buffer":0,"byteOffset":224,"byteLength":12}}],
+             "buffers":[{{"byteLength":{total},"uri":"data:application/octet-stream;base64,{data}"}}]}}"#,
+            total = buffer.len(),
+            data = enc
+        )
+    }
+
+    /// Oracle: the skinned document imports into mesh + skin with
+    /// correct joints, bindings, and bind matrices.
+    #[test]
+    fn skinned_document_imports() {
+        let Some((mesh, skin)) = import_gltf_skin(&skin_doc()) else {
+            return;
+        };
+        assert_eq!(mesh.verts.len(), 3);
+        assert_eq!(skin.joints.len(), 2);
+        // Vertex bindings: 0->joint0, 1->joint1, 2->joint0.
+        assert_eq!(skin.bindings[0], vec![(0, 1.0)]);
+        assert_eq!(skin.bindings[1], vec![(1, 1.0)]);
+        assert_eq!(skin.bindings[2], vec![(0, 1.0)]);
+        // Bind worlds: identity, then translate (0, -5, 0).
+        assert_eq!(skin.bind_worlds[0], Mat4::identity());
+        let w1 = skin.bind_worlds[1]
+            .transform_point(Vec3::ZERO)
+            .map(|(x, y, _)| (x, y));
+        assert_eq!(w1, Some((0.0, -5.0)));
+    }
+
+    /// Oracle: the skinned mesh deforms when a joint rotates - the
+    /// full imported-pipeline animation loop works.
+    #[test]
+    fn skinned_mesh_deforms_with_pose() {
+        let Some((mesh, skin)) = import_gltf_skin(&skin_doc()) else {
+            return;
+        };
+        let bind = skin.posed_mesh(&mesh, &[]);
+        // Poses: joint 0 stays at bind, joint 1 rotates 1.5 rad
+        // about Z in its local space.
+        let rotated: Vec<Mat4> = vec![
+            Mat4::identity(),
+            Mat4::translate(Vec3::new(0.0, 5.0, 0.0)).mul(&Mat4::rotate_z(1.5)),
+        ];
+        let posed = skin.posed_mesh(&mesh, &rotated);
+        let moved = bind
+            .verts
+            .iter()
+            .zip(posed.verts.iter())
+            .map(|(a, b)| ((a.x - b.x).powi(2) + (a.y - b.y).powi(2)).sqrt())
+            .fold(0.0_f64, f64::max);
+        assert!(moved > 1.0, "rotating joint 1 must deform: {moved:.2}");
+    }
+}
+
+/// Test base64 encoder (standard table, padded).
+#[cfg(test)]
+#[allow(clippy::indexing_slicing)]
+fn base64_encode(data: &[u8]) -> String {
+    const TABLE: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::new();
+    for chunk in data.chunks(3) {
+        let b0 = u32::from(chunk[0]);
+        let b1 = chunk.get(1).map_or(0, |b| u32::from(*b));
+        let b2 = chunk.get(2).map_or(0, |b| u32::from(*b));
+        let n = (b0 << 16) | (b1 << 8) | b2;
+        out.push(TABLE[(n >> 18 & 63) as usize] as char);
+        out.push(TABLE[(n >> 12 & 63) as usize] as char);
+        out.push(if chunk.len() > 1 {
+            TABLE[(n >> 6 & 63) as usize] as char
+        } else {
+            '='
+        });
+        out.push(if chunk.len() > 2 {
+            TABLE[(n & 63) as usize] as char
+        } else {
+            '='
+        });
+    }
+    out
 }
 
 #[cfg(test)]
