@@ -8,10 +8,14 @@
 //!
 //! Deterministic: pure text/binary arithmetic, no environment state.
 
+use crate::animation::{AnimationClip, Axis, Track};
+
+/// Accumulated per-axis keys for one joint: ((joint, axis), keys).
+type AxisKeys = ((usize, Axis), Vec<(f64, f64)>);
 use crate::json::{self, Json};
 use crate::math::{Mat4, Vec3};
 use crate::mesh::Mesh;
-use crate::skin::{Joint, Skin};
+use crate::skin::{Channel, Joint, Skin};
 
 /// Decode standard base64 (with padding) into bytes.
 #[must_use]
@@ -281,6 +285,142 @@ fn node_local(node: &Json) -> Option<Mat4> {
     };
     let rot = quat_mat4(quat.0, quat.1, quat.2, quat.3);
     Some(Mat4::translate(t).mul(&rot).mul(&scale_m))
+}
+
+/// Quaternion (x, y, z, w) to Euler angles in XYZ application order
+/// (radians). The decomposition is exact for single-axis rotations
+/// and approximate for compound ones.
+#[must_use]
+fn quat_euler_xyz(x: f64, y: f64, z: f64, w: f64) -> (f64, f64, f64) {
+    let sinr_cosp = 2.0 * (w * x + y * z);
+    let cosr_cosp = 1.0 - 2.0 * (x * x + y * y);
+    let ex = sinr_cosp.atan2(cosr_cosp);
+    let sinp = 2.0 * (w * y - z * x);
+    let ey = if sinp.abs() >= 1.0 {
+        sinp.signum() * std::f64::consts::FRAC_PI_2
+    } else {
+        sinp.asin()
+    };
+    let sinp_cosp = 2.0 * (w * z + x * y);
+    let cosp = 1.0 - 2.0 * (y * y + z * z);
+    let ez = sinp_cosp.atan2(cosp);
+    (ex, ey, ez)
+}
+
+/// Import animations[0] as an [`AnimationClip`]: rotation channels
+/// (quaternion samplers) targeting joint nodes decompose to
+/// per-axis scalar tracks (XYZ euler; planar z-only clips are exact).
+/// Channels targeting non-joint nodes and non-rotation paths are
+/// skipped. Returns `None` when the document has no animations or
+/// no usable channels.
+#[must_use]
+pub fn import_gltf_animation(text: &str) -> Option<AnimationClip> {
+    let doc = json::parse(text)?;
+    let bytes_bytes = doc.get("buffers")?.at(0)?;
+    let uri = bytes_bytes.get("uri")?.str_val()?;
+    let bytes = base64_decode(strip_data_uri(uri))?;
+
+    let anims = doc.get("animations")?.at(0)?;
+    let name = anims
+        .get("name")
+        .and_then(|j| j.str_val())
+        .unwrap_or("clip")
+        .to_owned();
+
+    // Joint mapping: skins[0].joints (node indices) -> joint indices.
+    let skin0 = doc.get("skins")?.at(0)?;
+    let joints_json = skin0.get("joints")?;
+    let mut joint_nodes: Vec<usize> = Vec::new();
+    let mut ji = 0_usize;
+    while joints_json.at(ji).is_some() {
+        if let Some(u) = joints_json.at(ji).and_then(|j| j.uint()) {
+            joint_nodes.push(u);
+        }
+        ji += 1;
+    }
+    if joint_nodes.is_empty() {
+        return None;
+    }
+
+    // Accumulate per-(joint, axis) key lists from rotation channels.
+    let mut keys: Vec<AxisKeys> = Vec::new();
+    let mut duration = 0.0_f64;
+    let mut ci = 0_usize;
+    while anims.get("channels").and_then(|c| c.at(ci)).is_some() {
+        let ch = anims.get("channels").and_then(|c| c.at(ci))?;
+        ci += 1;
+        let Some(s_idx) = ch.get("sampler").and_then(|j| j.uint()) else {
+            continue;
+        };
+        let Some(target) = ch.get("target") else {
+            continue;
+        };
+        let Some(node) = target.get("node").and_then(|j| j.uint()) else {
+            continue;
+        };
+        let Some(path) = target.get("path").and_then(|j| j.str_val()) else {
+            continue;
+        };
+        if path != "rotation" {
+            continue;
+        }
+        let Some(joint) = joint_nodes.iter().position(|&n| n == node) else {
+            continue;
+        };
+        let Some(sampler) = anims.get("samplers").and_then(|s| s.at(s_idx)) else {
+            continue;
+        };
+        let Some(input_acc) = sampler.get("input").and_then(|j| j.uint()) else {
+            continue;
+        };
+        let Some(output_acc) = sampler.get("output").and_then(|j| j.uint()) else {
+            continue;
+        };
+        let times = read_accessor(&bytes, &doc, input_acc)?;
+        let quats = read_accessor(&bytes, &doc, output_acc)?;
+        // Quaternion keys: VEC4 per time.
+        let qcount = quats.len() / 4;
+        if qcount == 0 {
+            continue;
+        }
+        for k in 0..qcount {
+            let t = times.get(k).copied().unwrap_or(0.0);
+            let (ex, ey, ez) = quat_euler_xyz(
+                quats.get(k * 4).copied().unwrap_or(0.0),
+                quats.get(k * 4 + 1).copied().unwrap_or(0.0),
+                quats.get(k * 4 + 2).copied().unwrap_or(0.0),
+                quats.get(k * 4 + 3).copied().unwrap_or(1.0),
+            );
+            duration = duration.max(t);
+            for (axis, value) in [(Axis::X, ex), (Axis::Y, ey), (Axis::Z, ez)] {
+                let key = (joint, axis);
+                if let Some((_, list)) = keys.iter_mut().find(|(a, _)| *a == key) {
+                    list.push((t, value));
+                } else {
+                    keys.push((key, vec![(t, value)]));
+                }
+            }
+        }
+    }
+    if keys.is_empty() {
+        return None;
+    }
+    // Deterministic track order: joint, then axis rank (X=0, Y=1, Z=2).
+    let rank = |a: Axis| match a {
+        Axis::X => 0_u8,
+        Axis::Y => 1,
+        Axis::Z => 2,
+    };
+    keys.sort_by_key(|((joint, axis), _)| (*joint, rank(*axis)));
+    let tracks: Vec<Track> = keys
+        .into_iter()
+        .map(|((joint, axis), k)| Track {
+            joint,
+            axis,
+            channel: Channel::new(k),
+        })
+        .collect();
+    Some(AnimationClip::new(&name, duration.max(1e-9), tracks))
 }
 
 /// Import mesh 0 primitive 0 WITH skinning: JOINTS_0/WEIGHTS_0
@@ -705,5 +845,63 @@ mod tests {
             .is_none(),
             "bad base64"
         );
+        assert!(import_gltf_animation("{}").is_none(), "no animations");
+        assert!(
+            import_gltf_animation(
+                r#"{"animations":[{}],"skins":[{"joints":[1]}],"nodes":[{},{}]}"#
+            )
+            .is_none(),
+            "no channels"
+        );
+    }
+
+    /// Oracle: rotation channels targeting joint nodes import as
+    /// per-axis tracks with the clip name and duration.
+    #[test]
+    fn gltf_animation_imports() {
+        // Two joints (nodes 1, 2); a z-rotation channel on node 1.
+        // Quats: z-rotation by angle a is (0, 0, sin(a/2), cos(a/2)).
+        let mut times: Vec<u8> = Vec::new();
+        let mut quats: Vec<u8> = Vec::new();
+        for (k, t) in [0.0_f64, 1.0, 2.0].iter().enumerate() {
+            times.extend_from_slice(&(*t as f32).to_le_bytes());
+            let a = match k {
+                0 => -0.2_f64,
+                1 => 0.2,
+                _ => -0.2,
+            };
+            let (sx, cx) = (a * 0.5).sin_cos();
+            for v in [0.0_f64, 0.0, sx, cx] {
+                quats.extend_from_slice(&(v as f32).to_le_bytes());
+            }
+        }
+        let mut buffer: Vec<u8> = Vec::new();
+        buffer.extend_from_slice(&times);
+        buffer.extend_from_slice(&quats);
+        let doc = format!(
+            r#"{{"nodes":[{{}},{{}},{{}}],
+             "skins":[{{"joints":[1,2]}}],
+             "animations":[[{{}}],[{{}}]][{{}}],
+             "animations":[{{"name":"sway",
+               "channels":[{{"sampler":0,"target":{{"node":1,"path":"rotation"}}}}],
+               "samplers":[{{"input":2,"output":3,"interpolation":"LINEAR"}}]}}],
+             "accessors":[{{"bufferView":0,"componentType":5126,"count":3,"type":"SCALAR"}},
+                          {{"bufferView":1,"componentType":5126,"count":3,"type":"VEC4"}}],
+             "bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":24}},
+                            {{"buffer":0,"byteOffset":24,"byteLength":48}}],
+             "buffers":[{{"byteLength":{total},"uri":"data:application/octet-stream;base64,{data}"}}]}}"#,
+            total = buffer.len(),
+            data = base64_encode(&buffer)
+        );
+        let Some(clip) = import_gltf_animation(&doc) else {
+            return;
+        };
+        assert_eq!(clip.name, "sway");
+        assert!((clip.duration - 2.0).abs() < 1e-6, "duration");
+        assert_eq!(clip.tracks.len(), 3, "one track per axis");
+        assert_eq!(clip.tracks[0].joint, 0);
+        assert_eq!(clip.tracks[0].axis, Axis::Z);
+        // Sampling: t=0 is the -0.2 rad key.
+        assert!((clip.tracks[0].channel.sample(0.0) + 0.2).abs() < 1e-6);
     }
 }

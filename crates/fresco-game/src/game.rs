@@ -17,6 +17,7 @@ use path_kit::Vec2;
 use phys_kit::Particle;
 use phys_kit::collision::StaticBox;
 use three_kit::animation::{AnimationClip, Animator};
+use three_kit::gltf::base64_encode;
 use three_kit::{Joint, Mat4, Vec3};
 use widget_kit::WidgetColors;
 
@@ -216,7 +217,28 @@ fn dancer_gltf_doc() -> String {
     buffer.extend_from_slice(&weights_bytes);
     buffer.extend_from_slice(&ibm_bytes);
     buffer.extend_from_slice(&idx_bytes);
-    let enc = three_kit::gltf::base64_encode(&buffer);
+    // Animation: sampler input times [0, 1, 2] then three z-rotation
+    // quaternion outputs (hip, torso, arm), 3 VEC4 f32 keys each.
+    let mut anim_times: Vec<u8> = Vec::new();
+    for t in [0.0_f32, 1.0, 2.0] {
+        anim_times.extend_from_slice(&t.to_le_bytes());
+    }
+    let mut anim_outputs: Vec<Vec<u8>> = Vec::new();
+    for (rate, phase) in [(0.2_f64, 0.0_f64), (0.15, 1.2), (0.9, 2.4)] {
+        let mut out: Vec<u8> = Vec::new();
+        for t in [0.0_f64, 1.0, 2.0] {
+            let angle = rate * (std::f64::consts::TAU * t / 2.0 + phase);
+            let (sx, cx) = (angle * 0.5).sin_cos();
+            for v in [0.0_f64, 0.0, sx, cx] {
+                out.extend_from_slice(&(v as f32).to_le_bytes());
+            }
+        }
+        anim_outputs.push(out);
+    }
+    buffer.extend_from_slice(&anim_times);
+    for out in &anim_outputs {
+        buffer.extend_from_slice(out);
+    }
     let n_verts = ROWS * 2;
     let n_tris = (ROWS - 1) * 2;
     format!(
@@ -227,17 +249,32 @@ fn dancer_gltf_doc() -> String {
                       {{"bufferView":1,"componentType":5121,"count":{nv},"type":"VEC4"}},
                       {{"bufferView":2,"componentType":5126,"count":{nv},"type":"VEC4"}},
                       {{"bufferView":3,"componentType":5126,"count":3,"type":"MAT4"}},
-                      {{"bufferView":4,"componentType":5125,"count":{nt},"type":"SCALAR"}}],
+                      {{"bufferView":4,"componentType":5125,"count":{nt},"type":"SCALAR"}},
+                      {{"bufferView":5,"componentType":5126,"count":3,"type":"SCALAR"}},
+                      {{"bufferView":6,"componentType":5126,"count":3,"type":"VEC4"}},
+                      {{"bufferView":7,"componentType":5126,"count":3,"type":"VEC4"}},
+                      {{"bufferView":8,"componentType":5126,"count":3,"type":"VEC4"}}],
          "bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":192}},
                         {{"buffer":0,"byteOffset":192,"byteLength":64}},
                         {{"buffer":0,"byteOffset":256,"byteLength":256}},
                         {{"buffer":0,"byteOffset":512,"byteLength":192}},
-                        {{"buffer":0,"byteOffset":704,"byteLength":168}}],
+                        {{"buffer":0,"byteOffset":704,"byteLength":168}},
+                        {{"buffer":0,"byteOffset":872,"byteLength":12}},
+                        {{"buffer":0,"byteOffset":884,"byteLength":48}},
+                        {{"buffer":0,"byteOffset":932,"byteLength":48}},
+                        {{"buffer":0,"byteOffset":980,"byteLength":48}}],
+         "animations":[{{"name":"dance",
+           "channels":[{{"sampler":0,"target":{{"node":1,"path":"rotation"}}}},
+                      {{"sampler":1,"target":{{"node":2,"path":"rotation"}}}},
+                      {{"sampler":2,"target":{{"node":3,"path":"rotation"}}}}],
+           "samplers":[{{"input":5,"output":6,"interpolation":"LINEAR"}},
+                      {{"input":5,"output":7,"interpolation":"LINEAR"}},
+                      {{"input":5,"output":8,"interpolation":"LINEAR"}}]}}],
          "buffers":[{{"byteLength":{total},"uri":"data:application/octet-stream;base64,{data}"}}]}}"#,
         nv = n_verts,
         nt = n_tris,
         total = buffer.len(),
-        data = enc
+        data = base64_encode(&buffer)
     )
 }
 
@@ -341,19 +378,28 @@ impl GameScreen {
                 (mesh, skin)
             }
         };
-        let dancer = match three_kit::anim_text::import_clip(DANCER_DOC) {
+        let dancer = match three_kit::gltf::import_gltf_animation(&dancer_gltf_doc()) {
+            // Preferred: the glTF document's animation samplers.
             Some(clip) => {
                 let mut a = Animator::new(clip);
                 a.play();
                 a
             }
-            None => {
-                // Fixed valid text cannot fail; the fallback is a
-                // static bind-pose figure.
-                let mut a = Animator::new(AnimationClip::new("idle", 2.0, Vec::new()));
-                a.play();
-                a
-            }
+            // Fallback: the text-format clip document.
+            None => match three_kit::anim_text::import_clip(DANCER_DOC) {
+                Some(clip) => {
+                    let mut a = Animator::new(clip);
+                    a.play();
+                    a
+                }
+                None => {
+                    // Fixed valid text cannot fail; the fallback is a
+                    // static bind-pose figure.
+                    let mut a = Animator::new(AnimationClip::new("idle", 2.0, Vec::new()));
+                    a.play();
+                    a
+                }
+            },
         };
         GameScreen {
             world: World::new(),
