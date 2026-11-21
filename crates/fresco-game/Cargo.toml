@@ -10,6 +10,9 @@ description = "Phase B game demo for the fresco UI engine: ecs-kit entities + ph
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+[features]
+android-entry = []
+
 [dependencies]
 winit = { version = "0.30" }
 paint-kit = { workspace = true }

@@ -592,7 +592,7 @@ fn write_best(dir: &std::path::Path, best: u64) {
     let _ = std::fs::write(path, format!("{best}\n"));
 }
 
-#[cfg(target_os = "android")]
+#[cfg(all(target_os = "android", feature = "android-entry"))]
 mod android_entry {
     use super::GameApp;
     use winit::event_loop::EventLoop;

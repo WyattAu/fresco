@@ -279,6 +279,20 @@ impl ApplicationHandler for KestrelApp {
                     }
                 }
             }
+            // Android touch: input tap delivers Touch events, not
+            // mouse events (fresco-game touch lesson).
+            WindowEvent::Touch(touch) => {
+                let at = self.pointer_at(touch.location);
+                match touch.phase {
+                    winit::event::TouchPhase::Started => {
+                        self.panel.pointer_down(at.x, at.y);
+                    }
+                    winit::event::TouchPhase::Ended | winit::event::TouchPhase::Cancelled => {
+                        self.panel.pointer_up(at.x, at.y);
+                    }
+                    _ => {}
+                }
+            }
             _ => {}
         }
     }
@@ -294,4 +308,28 @@ pub fn run_desktop() -> Result<(), String> {
     event_loop
         .run_app(&mut KestrelApp::default())
         .map_err(|e| format!("run: {e}"))
+}
+
+#[cfg(target_os = "android")]
+mod android_entry {
+    use super::KestrelApp;
+    use winit::event_loop::EventLoop;
+    use winit::platform::android::EventLoopBuilderExtAndroid;
+
+    /// Android entry point (NativeActivity).
+    ///
+    /// # Panics
+    /// Panics when the event loop cannot start — fatal for the app
+    /// shell; stdout routes to logcat.
+    #[unsafe(no_mangle)]
+    fn android_main(app: android_activity::AndroidApp) {
+        println!("[kestrel] android_main: starting kestrel-gui");
+        let Ok(event_loop) = EventLoop::builder().with_android_app(app).build() else {
+            println!("[kestrel] event loop failed");
+            return;
+        };
+        if let Err(e) = event_loop.run_app(&mut KestrelApp::default()) {
+            println!("[kestrel] run failed: {e}");
+        }
+    }
 }
