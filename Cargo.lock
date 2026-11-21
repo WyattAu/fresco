@@ -1125,8 +1125,10 @@ version = "0.8.7"
 dependencies = [
  "paint-kit",
  "path-kit",
+ "softbuffer",
  "widget-kit",
  "window-kit",
+ "winit",
 ]
 
 [[package]]

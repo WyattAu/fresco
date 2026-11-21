@@ -10,6 +10,8 @@
 //! button) rendered into any paint-kit surface. Windowed shells
 //! follow the fresco-game pattern.
 
+pub mod app;
+
 use paint_kit::{Painter, Surface};
 use widget_kit::{LogicalAt, Size2D, WidgetColors, WidgetKind, WidgetRef, WidgetTree, paint_tree};
 
