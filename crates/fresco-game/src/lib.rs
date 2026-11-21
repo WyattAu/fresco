@@ -256,9 +256,18 @@ impl GameApp {
     }
 
     fn pointer_at(&self, position: winit::dpi::PhysicalPosition<f64>) -> widget_kit::LogicalAt {
+        // winit delivers PHYSICAL pixels; the game + menus work in
+        // LOGICAL px. Divide by the scale factor (fresco-android M5
+        // lesson - without this, touches land 3x too low on 3x
+        // screens and never hit their targets).
+        let scale = self
+            .window
+            .as_ref()
+            .map(|w| w.scale_factor())
+            .unwrap_or(1.0);
         widget_kit::LogicalAt {
-            x: position.x,
-            y: position.y,
+            x: position.x / scale,
+            y: position.y / scale,
         }
     }
 }
@@ -462,11 +471,26 @@ impl ApplicationHandler for GameApp {
                 }
             }
             WindowEvent::Touch(touch) => {
-                // Android delivers finger events here.
+                // Android delivers finger events here in PHYSICAL px;
+                // divide by the scale factor (fresco-android M5
+                // lesson) - raw coords land 3x off on 3x screens.
+                let scale = self
+                    .window
+                    .as_ref()
+                    .map(|w| w.scale_factor())
+                    .unwrap_or(1.0);
                 let at = widget_kit::LogicalAt {
-                    x: touch.location.x,
-                    y: touch.location.y,
+                    x: touch.location.x / scale,
+                    y: touch.location.y / scale,
                 };
+                if touch.phase == winit::event::TouchPhase::Started {
+                    println!(
+                        "[fresco-game][dbg] touch started at ({:.1},{:.1}) state={:?}",
+                        touch.location.x,
+                        touch.location.y,
+                        matches!(self.state, AppState::Game)
+                    );
+                }
                 match touch.phase {
                     winit::event::TouchPhase::Started => match self.state {
                         AppState::Menu => self.menu.pointer_down(at.x, at.y),
@@ -585,7 +609,7 @@ mod android_entry {
         // Persistence home: the app's internal data dir (private,
         // survives trace rotation).
         if let Some(p) = app.internal_data_path() {
-            let _ = PERSIST_DIR.set(p);
+            let _ = super::PERSIST_DIR.set(p);
         }
         // Infallible by policy: a failed loop logs and lets the app
         // exit cleanly rather than crashing the process.
