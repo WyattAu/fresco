@@ -14,9 +14,23 @@ use winit::window::{Window, WindowId};
 
 use crate::KestrelPanel;
 
+use fresco_game::game::GameScreen;
+
+/// Which screen the shell shows.
+#[derive(Default)]
+enum AppState {
+    /// The kestrel panel (main menu surface).
+    #[default]
+    Menu,
+    /// The fresco game (ECS loop, SPH pool, targets).
+    Game,
+}
+
 /// Shared application state for the windowed shell.
 #[derive(Default)]
 struct KestrelApp {
+    state: AppState,
+    game: GameScreen,
     window: Option<std::sync::Arc<Window>>,
     context: Option<softbuffer::Context<std::sync::Arc<Window>>>,
     surface: Option<softbuffer::Surface<std::sync::Arc<Window>, std::sync::Arc<Window>>>,
@@ -57,6 +71,12 @@ impl KestrelApp {
         );
         let (wu, hu) = (size.width.max(1) as usize, size.height.max(1) as usize);
 
+        // Sim only while playing.
+        if matches!(self.state, AppState::Game) {
+            self.game.step_wall_time(std::time::Instant::now());
+        }
+        self.game.resize(lwu, lhu);
+
         let paint_start = std::time::Instant::now();
         self.panel.resize(lwu, lhu);
         let mut panel_surface = self
@@ -67,7 +87,10 @@ impl KestrelApp {
             panel_surface = Surface::new(lwu, lhu).unwrap_or_default();
         }
         let mut painter = self.panel_painter.take().unwrap_or_default();
-        self.panel.paint(&mut panel_surface, &mut painter);
+        match self.state {
+            AppState::Menu => self.panel.paint(&mut panel_surface, &mut painter),
+            AppState::Game => self.game.paint(&mut panel_surface, &mut painter),
+        }
         self.panel_painter = Some(painter);
         // Return the painted surface BEFORE the blit: it is both the
         // blit source and the pacing/inspection source.
@@ -133,6 +156,15 @@ impl KestrelApp {
         }
 
         window.request_redraw();
+    }
+
+    /// Menu hook: when the Play button activated, transition to the
+    /// fresco game.
+    fn maybe_start_game(&mut self) {
+        if self.panel.play_pressed() {
+            self.game = GameScreen::new();
+            self.state = AppState::Game;
+        }
     }
 
     fn pointer_at(&self, position: winit::dpi::PhysicalPosition<f64>) -> widget_kit::LogicalAt {
@@ -233,12 +265,17 @@ impl ApplicationHandler for KestrelApp {
                     && let Some(at) = self.last_cursor
                 {
                     match state {
-                        winit::event::ElementState::Pressed => {
-                            self.panel.pointer_down(at.x, at.y);
-                        }
-                        winit::event::ElementState::Released => {
-                            self.panel.pointer_up(at.x, at.y);
-                        }
+                        winit::event::ElementState::Pressed => match self.state {
+                            AppState::Menu => self.panel.pointer_down(at.x, at.y),
+                            AppState::Game => self.game.pointer_down(at.x, at.y),
+                        },
+                        winit::event::ElementState::Released => match self.state {
+                            AppState::Menu => {
+                                self.panel.pointer_up(at.x, at.y);
+                                self.maybe_start_game();
+                            }
+                            AppState::Game => self.game.pointer_up(at.x, at.y),
+                        },
                     }
                 }
             }

@@ -34,6 +34,7 @@ path-kit = { path = "crates/path-kit", version = "0.8.7" }
 phys-kit = { path = "crates/phys-kit", version = "0.8.7" }
 fluid-kit = { path = "crates/fluid-kit", version = "0.8.7" }
 audio-kit = { path = "crates/audio-kit", version = "0.8.7" }
+fresco-game = { path = "crates/fresco-game", version = "0.8.7" }
 kestrel-gui = { path = "crates/kestrel-gui", version = "0.8.7" }
 ecs-kit = { path = "crates/ecs-kit", version = "0.8.7" }
 three-kit = { path = "crates/three-kit", version = "0.8.7" }

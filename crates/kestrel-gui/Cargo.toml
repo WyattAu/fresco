@@ -11,6 +11,7 @@ keywords = ["gui", "ui", "widgets"]
 exclude = ["/target"]
 
 [lib]
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 winit = "0.30"
@@ -19,6 +20,22 @@ paint-kit = { workspace = true }
 widget-kit = { workspace = true }
 window-kit = { workspace = true }
 path-kit = { workspace = true }
+fresco-game = { workspace = true }
+
+[target.'cfg(target_os = "android")'.dependencies]
+winit = { version = "0.30", features = ["android-native-activity"] }
+android-activity = "0.6"
+
+[package.metadata.android]
+package = "com.example.kestrel_gui"
+apk_name = "kestrel-gui"
+
+[package.metadata.android.application]
+label = "kestrel"
+
+[package.metadata.android.application.activity]
+orientation = "portrait"
+theme = "@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen"
 
 [lints.rust]
 missing_docs = "deny"

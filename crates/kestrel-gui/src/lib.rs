@@ -21,6 +21,7 @@ pub struct KestrelPanel {
     colors: WidgetColors,
     status_ref: WidgetRef,
     refresh_ref: WidgetRef,
+    play_ref: WidgetRef,
     refreshes: u64,
 }
 
@@ -51,11 +52,17 @@ impl KestrelPanel {
             action: 1,
         });
         tree.add_child(root, refresh);
+        let play = tree.push(WidgetKind::Button {
+            label: "Play fresco game".to_string(),
+            action: 2,
+        });
+        tree.add_child(root, play);
         KestrelPanel {
             tree,
             colors: WidgetColors::default(),
             status_ref: status,
             refresh_ref: refresh,
+            play_ref: play,
             refreshes: 0,
         }
     }
@@ -108,6 +115,18 @@ impl KestrelPanel {
     #[must_use]
     pub const fn refreshes(&self) -> u64 {
         self.refreshes
+    }
+
+    /// Whether the Play button activated since the last call.
+    pub fn play_pressed(&mut self) -> bool {
+        self.tree.take_actions().contains(&2)
+    }
+
+    /// The Play button's laid-out rect (oracle + routing use).
+    #[must_use]
+    pub fn play_rect(&self) -> Option<(f64, f64, f64, f64)> {
+        let w = self.tree.widget(self.play_ref)?;
+        Some((w.rect.x, w.rect.y, w.rect.width, w.rect.height))
     }
 
     /// The refresh button's laid-out rect (oracle use).

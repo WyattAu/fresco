@@ -1123,6 +1123,8 @@ dependencies = [
 name = "kestrel-gui"
 version = "0.8.7"
 dependencies = [
+ "android-activity",
+ "fresco-game",
  "paint-kit",
  "path-kit",
  "softbuffer",
