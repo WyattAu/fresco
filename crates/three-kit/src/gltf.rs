@@ -550,10 +550,11 @@ mod skin_tests {
     }
 }
 
-/// Test base64 encoder (standard table, padded).
-#[cfg(test)]
+/// Standard base64 encoder (padded). Used by the glTF loader tests
+/// and by callers building data URIs for import.
+#[must_use]
 #[allow(clippy::indexing_slicing)]
-fn base64_encode(data: &[u8]) -> String {
+pub fn base64_encode(data: &[u8]) -> String {
     const TABLE: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::new();
     for chunk in data.chunks(3) {

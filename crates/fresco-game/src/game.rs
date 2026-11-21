@@ -144,6 +144,103 @@ pub fn hud_button_at(width: f64, height: f64, x: f64, y: f64) -> Option<HudButto
     }
 }
 
+/// Build the dancer as a glTF 2.0 document: a 16-vertex strip
+/// (2 columns x 8 rows spanning hip to arm tip) skinned to 3 joints
+/// (hip, torso at -28px, arm at -54px) with inverse bind matrices,
+/// embedded as a base64 data URI. Parsed at construction through
+/// three-kit's glTF importer - the dancer body is IMPORTED, not
+/// procedural.
+#[must_use]
+fn dancer_gltf_doc() -> String {
+    const ROWS: usize = 8;
+    let mut pos_bytes: Vec<u8> = Vec::new();
+    let mut joints_bytes: Vec<u8> = Vec::new();
+    let mut weights_bytes: Vec<u8> = Vec::new();
+    for r in 0..ROWS {
+        let y = 4.0 - 10.0 * f64::from(u32::try_from(r).unwrap_or(0));
+        for x in [-8.0_f64, 8.0_f64] {
+            pos_bytes.extend_from_slice(&(x as f32).to_le_bytes());
+            pos_bytes.extend_from_slice(&(y as f32).to_le_bytes());
+            pos_bytes.extend_from_slice(&0.0_f32.to_le_bytes());
+            // Row band -> joint: hip 0..=20px, torso to -48, arm below.
+            let joint: u8 = if y > -24.0 {
+                0
+            } else if y > -48.0 {
+                1
+            } else {
+                2
+            };
+            joints_bytes.extend_from_slice(&[joint, 0, 0, 0]);
+            let mut wrow = (1.0_f32).to_le_bytes().to_vec();
+            wrow.extend_from_slice(&0.0_f32.to_le_bytes());
+            wrow.extend_from_slice(&0.0_f32.to_le_bytes());
+            wrow.extend_from_slice(&0.0_f32.to_le_bytes());
+            weights_bytes.extend_from_slice(&wrow);
+        }
+    }
+    // Inverse bind matrices: identity for the hip (bind world =
+    // identity), translate (+28) for the torso joint, translate
+    // (+54) for the arm joint.
+    let mut ibm_bytes: Vec<u8> = Vec::new();
+    for ty in [0.0_f64, 28.0, 54.0] {
+        let m = [
+            1.0, 0.0, 0.0, 0.0, //
+            0.0, 1.0, 0.0, 0.0, //
+            0.0, 0.0, 1.0, 0.0, //
+            0.0, ty, 0.0, 1.0,
+        ];
+        for v in m {
+            ibm_bytes.extend_from_slice(&v.to_le_bytes());
+        }
+    }
+    let mut idx_bytes: Vec<u8> = Vec::new();
+    for r in 0..ROWS - 1 {
+        let base = u32::try_from(r * 2).unwrap_or(0);
+        idx_bytes.extend_from_slice(&[0, 0, 0, 0]); // placeholder width alignment
+        let _ = base;
+        idx_bytes.truncate(idx_bytes.len() - 4);
+        let a = u32::try_from(r * 2).unwrap_or(0);
+        let b = a + 1;
+        let c = a + 2;
+        let d = a + 3;
+        idx_bytes.extend_from_slice(&a.to_le_bytes());
+        idx_bytes.extend_from_slice(&b.to_le_bytes());
+        idx_bytes.extend_from_slice(&c.to_le_bytes());
+        idx_bytes.extend_from_slice(&b.to_le_bytes());
+        idx_bytes.extend_from_slice(&d.to_le_bytes());
+        idx_bytes.extend_from_slice(&c.to_le_bytes());
+    }
+    let mut buffer: Vec<u8> = Vec::new();
+    buffer.extend_from_slice(&pos_bytes);
+    buffer.extend_from_slice(&joints_bytes);
+    buffer.extend_from_slice(&weights_bytes);
+    buffer.extend_from_slice(&ibm_bytes);
+    buffer.extend_from_slice(&idx_bytes);
+    let enc = three_kit::gltf::base64_encode(&buffer);
+    let n_verts = ROWS * 2;
+    let n_tris = (ROWS - 1) * 2;
+    format!(
+        r#"{{"nodes":[{{}},{{"children":[2]}},{{"children":[3],"translation":[0.0,-28.0,0.0]}},{{"translation":[0.0,-26.0,0.0]}}],
+         "skins":[{{"joints":[1,2,3],"inverseBindMatrices":3}}],
+         "meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"JOINTS_0":1,"WEIGHTS_0":2}},"indices":4}}]}}],
+         "accessors":[{{"bufferView":0,"componentType":5126,"count":{nv},"type":"VEC3"}},
+                      {{"bufferView":1,"componentType":5121,"count":{nv},"type":"VEC4"}},
+                      {{"bufferView":2,"componentType":5126,"count":{nv},"type":"VEC4"}},
+                      {{"bufferView":3,"componentType":5126,"count":3,"type":"MAT4"}},
+                      {{"bufferView":4,"componentType":5125,"count":{nt},"type":"SCALAR"}}],
+         "bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":192}},
+                        {{"buffer":0,"byteOffset":192,"byteLength":64}},
+                        {{"buffer":0,"byteOffset":256,"byteLength":256}},
+                        {{"buffer":0,"byteOffset":512,"byteLength":192}},
+                        {{"buffer":0,"byteOffset":704,"byteLength":168}}],
+         "buffers":[{{"byteLength":{total},"uri":"data:application/octet-stream;base64,{data}"}}]}}"#,
+        nv = n_verts,
+        nt = n_tris,
+        total = buffer.len(),
+        data = enc
+    )
+}
+
 /// The game screen: ECS world, walls, sim clock, input.
 pub struct GameScreen {
     world: World,
@@ -215,27 +312,35 @@ impl GameScreen {
                 local: three_kit::Mat4::translate(Vec3::new(0.0, -26.0, 0.0)),
             },
         ];
-        let dancer_base = {
-            // A vertical strip hanging from the hip origin: 2 columns
-            // x 9 rows, spanning 80 px of bone length.
-            let mut verts: Vec<three_kit::Vec3> = Vec::new();
-            let mut faces: Vec<[u32; 3]> = Vec::new();
-            let rows = 9_u32;
-            for r in 0..rows {
-                for c in 0..2_u32 {
-                    let x = if c == 0 { -8.0 } else { 8.0 };
-                    let y = -10.0 * f64::from(r);
-                    verts.push(three_kit::Vec3::new(x, y, 0.0));
-                }
+        // Dancer body IMPORTED from the glTF document through the
+        // M8.4/M8.5 loader chain; the procedural strip + nearest
+        // bind remains as the fallback when the import fails.
+        let (dancer_base, dancer_skin) = match three_kit::gltf::import_gltf_skin(&dancer_gltf_doc())
+        {
+            Some((mesh, skin)) => (mesh, skin),
+            None => {
+                let mesh = {
+                    let mut verts: Vec<three_kit::Vec3> = Vec::new();
+                    let mut faces: Vec<[u32; 3]> = Vec::new();
+                    let rows = 9_u32;
+                    for r in 0..rows {
+                        for c in 0..2_u32 {
+                            let x = if c == 0 { -8.0 } else { 8.0 };
+                            let y = -10.0 * f64::from(r);
+                            verts.push(three_kit::Vec3::new(x, y, 0.0));
+                        }
+                    }
+                    for r in 0..rows - 1 {
+                        let base = r * 2;
+                        faces.push([base, base + 1, base + 2]);
+                        faces.push([base + 1, base + 3, base + 2]);
+                    }
+                    three_kit::Mesh { verts, faces }
+                };
+                let skin = three_kit::skin::Skin::bind_nearest(&mesh, &dancer_joints);
+                (mesh, skin)
             }
-            for r in 0..rows - 1 {
-                let base = r * 2;
-                faces.push([base, base + 1, base + 2]);
-                faces.push([base + 1, base + 3, base + 2]);
-            }
-            three_kit::Mesh { verts, faces }
         };
-        let dancer_skin = three_kit::skin::Skin::bind_nearest(&dancer_base, &dancer_joints);
         let dancer = match three_kit::anim_text::import_clip(DANCER_DOC) {
             Some(clip) => {
                 let mut a = Animator::new(clip);
