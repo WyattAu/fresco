@@ -1,0 +1,28 @@
+[package]
+name = "kestrel-gui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Kestrel GUI: the estate's consumer application shell, bootstrapped on the fresco UI stack (widget-kit retained widgets, window-kit window facade, paint-kit raster)"
+
+keywords = ["gui", "ui", "widgets"]
+exclude = ["/target"]
+
+[lib]
+
+[dependencies]
+paint-kit = { workspace = true }
+widget-kit = { workspace = true }
+window-kit = { workspace = true }
+path-kit = { workspace = true }
+
+[lints.rust]
+missing_docs = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"

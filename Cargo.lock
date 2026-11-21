@@ -129,6 +129,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 
 [[package]]
+name = "audio-kit"
+version = "0.8.7"
+
+[[package]]
 name = "autocfg"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1113,6 +1117,16 @@ dependencies = [
  "cfg-if",
  "futures-util",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "kestrel-gui"
+version = "0.8.7"
+dependencies = [
+ "paint-kit",
+ "path-kit",
+ "widget-kit",
+ "window-kit",
 ]
 
 [[package]]

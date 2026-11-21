@@ -1,0 +1,31 @@
+[package]
+name = "audio-kit"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Deterministic audio synthesis for the fresco stack: oscillator + envelope + clip generation, headless-testable; output backends live behind default-off features"
+
+keywords = ["audio", "synthesis", "oscillator", "envelope"]
+categories = ["multimedia::audio", "game-development"]
+exclude = ["/target"]
+
+[lib]
+
+[dependencies]
+
+[features]
+default = []
+# Output backend wiring (CPAL/AAudio) - future layer; the synth core
+# is backend-free and headless-testable.
+cpal = []
+
+[lints.rust]
+missing_docs = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
