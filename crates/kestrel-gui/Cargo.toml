@@ -16,6 +16,7 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 winit = "0.30"
 softbuffer = "0.4"
+audio-kit = { workspace = true }
 paint-kit = { workspace = true }
 widget-kit = { workspace = true }
 window-kit = { workspace = true }

@@ -210,6 +210,8 @@ impl ApplicationHandler for KestrelApp {
                     Err(e) => println!("[kestrel] softbuffer context: {e}"),
                 }
                 self.window = Some(window);
+                // The panel opens on the device's persisted best.
+                self.panel.set_best(fresco_game::best_score());
                 // Observability: pacing evidence in the capture dir
                 // (env override, desktop scratch default).
                 let dir = KestrelApp::capture_dir();
@@ -289,6 +291,11 @@ impl ApplicationHandler for KestrelApp {
                     }
                     winit::event::TouchPhase::Ended | winit::event::TouchPhase::Cancelled => {
                         self.panel.pointer_up(at.x, at.y);
+                        // Touch taps activate buttons through
+                        // pointer_up - the mouse path's
+                        // maybe_start_game call is not enough on
+                        // Android (the touch lesson again).
+                        self.maybe_start_game();
                     }
                     _ => {}
                 }
