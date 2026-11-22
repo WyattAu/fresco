@@ -593,6 +593,20 @@ fn write_best(dir: &std::path::Path, best: u64) {
     let _ = std::fs::write(path, format!("{best}\n"));
 }
 
+/// The persisted best score under `dir` (0 when absent/unreadable).
+/// The consumer-shell form of [`read_best`]: kestrel's panel reads
+/// the same file the game writes, without owning persistence.
+#[must_use]
+pub fn best_score_in(dir: &std::path::Path) -> u64 {
+    read_best(dir)
+}
+
+/// The device's persisted best score (0 when absent/unreadable).
+#[must_use]
+pub fn best_score() -> u64 {
+    best_score_in(&persist_dir())
+}
+
 #[cfg(all(target_os = "android", feature = "android-entry"))]
 mod android_entry {
     use super::GameApp;
@@ -621,5 +635,24 @@ mod android_entry {
         if let Err(e) = event_loop.run_app(&mut GameApp::default()) {
             println!("[fresco-game] run failed: {e}");
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    /// Oracle: `best_score_in` reads `<dir>/highscore.txt`; garbage
+    /// and absent files are 0.
+    #[test]
+    fn best_score_in_reads_persist_file() {
+        let dir = std::env::temp_dir().join(format!("fresco-best-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("highscore.txt");
+        let _ = std::fs::write(&path, "42\n");
+        assert_eq!(super::best_score_in(&dir), 42, "digits parse");
+        let _ = std::fs::write(&path, "garbage!");
+        assert_eq!(super::best_score_in(&dir), 0, "garbage is 0");
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(super::best_score_in(&dir), 0, "absent is 0");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

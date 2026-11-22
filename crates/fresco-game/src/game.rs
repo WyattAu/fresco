@@ -495,7 +495,7 @@ impl GameScreen {
             x.clamp(WALL + BALL_RADIUS, self.width - WALL - BALL_RADIUS),
             y.clamp(WALL + BALL_RADIUS, self.height - WALL - BALL_RADIUS),
         );
-        self.sfx.play(SfxKind::Grab);
+        self.sfx.play(SfxKind::Grab, self.sim_frame);
         let player = self.world.spawn();
         let mut particle = Particle::free(pos, 1.0);
         particle.inv_mass = 0.0;
@@ -783,7 +783,7 @@ impl GameScreen {
             }
         }
         for (target, pos) in popped {
-            self.sfx.play(SfxKind::Pop);
+            self.sfx.play(SfxKind::Pop, self.sim_frame);
             // Combo: a pop inside the window chains (each consecutive
             // pop scores one more); outside the window the chain
             // restarts.
@@ -833,6 +833,16 @@ impl GameScreen {
                 Some((b.0.pos, r.0, vel))
             })
             .collect();
+        // Splash: a fast ball crossing the water line thuds into the
+        // pool - the Sfx rate limiter keeps churn from machine-gunning.
+        let water_line = self.height - WATER_LINE_OFFSET;
+        for (bpos, _rad, bvel) in &splashers {
+            if bpos.y > water_line && bvel.y > 250.0 {
+                self.sfx.play(SfxKind::Splash, self.sim_frame);
+                break; // one splash check per frame is enough
+            }
+        }
+
         // Impulse exchange (two-way): every particle kick applies an
         // equal-opposite reaction to the ball (Verlet: prev shifts),
         // scaled by the ball's relative mass (8 vs particle 1).
@@ -1295,6 +1305,12 @@ impl GameScreen {
         self.sfx.clip_len(kind)
     }
 
+    /// Accepted plays of a sfx kind (oracle use).
+    #[must_use]
+    pub const fn sfx_plays(&self, kind: SfxKind) -> u64 {
+        self.sfx.plays(kind)
+    }
+
     /// Target centers, for oracles.
     #[must_use]
     pub fn target_centers(&self) -> Vec<(f64, f64)> {
@@ -1635,6 +1651,26 @@ mod tests {
             popped_len,
             "one pop writes one clip into the sink"
         );
+    }
+
+    /// Oracle: a fast ball entering the pool fires the splash sfx -
+    /// at least one accepted play, and the rate limiter caps churn
+    /// (90 frames inside a 30-frame window: at most 4).
+    #[test]
+    fn pool_entry_splash_is_rate_limited() {
+        let mut game = GameScreen::new();
+        game.resize(360, 740);
+        for _ in 0..61 {
+            game.step();
+        }
+        let before = game.sfx_plays(SfxKind::Splash);
+        game.spawn(Vec2::new(180.0, 200.0), Vec2::new(0.0, 700.0));
+        for _ in 0..90 {
+            game.step();
+        }
+        let splashes = game.sfx_plays(SfxKind::Splash) - before;
+        assert!(splashes >= 1, "pool entry must fire the splash: {splashes}");
+        assert!(splashes <= 4, "churn must stay rate-limited: {splashes}");
     }
 
     /// Oracle: the skinned body deforms with the skeleton - posed
