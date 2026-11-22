@@ -19,6 +19,7 @@ paint-kit = { workspace = true }
 widget-kit = { workspace = true }
 window-kit = { workspace = true }
 path-kit = { workspace = true }
+audio-kit = { workspace = true }
 ecs-kit = { workspace = true }
 phys-kit = { workspace = true }
 fluid-kit = { workspace = true }

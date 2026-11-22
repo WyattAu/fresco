@@ -12,6 +12,7 @@
 //! realfont label path.
 
 use crate::atlas::tile_color;
+use crate::sfx::{Sfx, SfxKind};
 use ecs_kit::{Entity, World};
 use path_kit::Vec2;
 use phys_kit::Particle;
@@ -314,6 +315,8 @@ pub struct GameScreen {
     score: u64,
     /// Best score this device has seen (shown on the HUD).
     best: u64,
+    /// Sound effects (audio-kit synth clips into the SilentSink).
+    sfx: Sfx,
     /// Consecutive pops inside [`COMBO_FRAMES`]: each pop scores
     /// `1 + combo`.
     combo: u64,
@@ -426,6 +429,7 @@ impl GameScreen {
             score: 0,
             combo: 0,
             best: 0,
+            sfx: Sfx::new(),
             last_pop: None,
         }
     }
@@ -491,6 +495,7 @@ impl GameScreen {
             x.clamp(WALL + BALL_RADIUS, self.width - WALL - BALL_RADIUS),
             y.clamp(WALL + BALL_RADIUS, self.height - WALL - BALL_RADIUS),
         );
+        self.sfx.play(SfxKind::Grab);
         let player = self.world.spawn();
         let mut particle = Particle::free(pos, 1.0);
         particle.inv_mass = 0.0;
@@ -778,6 +783,7 @@ impl GameScreen {
             }
         }
         for (target, pos) in popped {
+            self.sfx.play(SfxKind::Pop);
             // Combo: a pop inside the window chains (each consecutive
             // pop scores one more); outside the window the chain
             // restarts.
@@ -1121,8 +1127,10 @@ impl GameScreen {
                 height: 20.0,
             },
             &format!(
-                "balls {balls_n}  score {}  x{}  best {}",
-                self.score, self.combo, self.best
+                "balls {balls_n}  score {}  x{}  sfx {}",
+                self.score,
+                self.combo,
+                self.sfx_frames()
             ),
             14.0,
             [220, 224, 232, 255],
@@ -1273,6 +1281,18 @@ impl GameScreen {
     #[must_use]
     pub const fn sim_frame_now(&self) -> u64 {
         self.sim_frame
+    }
+
+    /// Sfx frames written to the sink (oracle use).
+    #[must_use]
+    pub const fn sfx_frames(&self) -> u64 {
+        self.sfx.frames_written()
+    }
+
+    /// A sfx clip's length in samples (oracle use).
+    #[must_use]
+    pub fn sfx_clip_len(&self, kind: SfxKind) -> usize {
+        self.sfx.clip_len(kind)
     }
 
     /// Target centers, for oracles.
@@ -1590,6 +1610,30 @@ mod tests {
                 .iter()
                 .any(|&(x, y)| (x - 120.0).abs() < 1.0 && (y - 200.0).abs() < 1.0),
             "player must sit at the pointer: {centers:?}"
+        );
+    }
+
+    /// Oracle: a popped target feeds the pop clip into the sink -
+    /// the frame count grows by exactly the clip length per pop.
+    #[test]
+    fn target_pop_feeds_sfx_sink() {
+        let mut game = GameScreen::new();
+        game.resize(360, 740);
+        for _ in 0..61 {
+            game.step();
+        }
+        let Some(&(tx, ty)) = game.target_centers().first() else {
+            return;
+        };
+        let before = game.sfx_frames();
+        game.spawn(Vec2::new(tx, ty), Vec2::ZERO);
+        game.step();
+        let popped_len = game.sfx_clip_len(SfxKind::Pop) as u64;
+        let after = game.sfx_frames();
+        assert_eq!(
+            after - before,
+            popped_len,
+            "one pop writes one clip into the sink"
         );
     }
 

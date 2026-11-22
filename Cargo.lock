@@ -727,6 +727,7 @@ name = "fresco-game"
 version = "0.8.7"
 dependencies = [
  "android-activity",
+ "audio-kit",
  "ecs-kit",
  "fluid-kit",
  "paint-kit",

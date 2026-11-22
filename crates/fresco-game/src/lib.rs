@@ -13,6 +13,7 @@
 pub mod atlas;
 pub mod game;
 pub mod menu;
+pub mod sfx;
 
 use game::{GameScreen, hud_button_at};
 use menu::MenuScreen;
