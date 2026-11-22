@@ -231,6 +231,42 @@ pub fn render_clip(
     out
 }
 
+/// The device-free output backend: accepts samples, counts frames,
+/// and retains the last written buffer for inspection. The oracle
+/// backend for tests and headless runs - and the pull-model
+/// interface a real output stream (CPAL/AAudio) will implement.
+#[derive(Clone, Debug, Default)]
+pub struct SilentSink {
+    frames_written: u64,
+    last: Vec<f32>,
+}
+
+impl SilentSink {
+    /// New empty sink.
+    #[must_use]
+    pub fn new() -> Self {
+        SilentSink::default()
+    }
+
+    /// Write one frame (one sample per channel; mono here).
+    pub fn write(&mut self, samples: &[f32]) {
+        self.last = samples.to_vec();
+        self.frames_written += 1;
+    }
+
+    /// Frames (write calls) seen so far.
+    #[must_use]
+    pub const fn frames_written(&self) -> u64 {
+        self.frames_written
+    }
+
+    /// The last written frame.
+    #[must_use]
+    pub fn last_frame(&self) -> &[f32] {
+        &self.last
+    }
+}
+
 /// Mix two clips with weights (sums need not be 1.0; the result
 /// clamps to [-1, 1]). Lengths may differ - the output is the
 /// longer of the two.
@@ -370,5 +406,32 @@ mod tests {
         let m = mix(&a, &b, 1.0, 1.0);
         assert!(m[0] <= 1.0, "clamped high: {}", m[0]);
         assert!(m[1] < -0.2, "0.5 + -0.8 = -0.3: {}", m[1]);
+    }
+
+    /// Oracle: the SilentSink preserves the last written frame and
+    /// counts frames - the pull-model contract a real output stream
+    /// will implement.
+    #[test]
+    fn silent_sink_records_frames() {
+        let mut sink = SilentSink::new();
+        assert_eq!(sink.frames_written(), 0);
+        sink.write(&[0.25, -0.5]);
+        sink.write(&[0.75, 0.0]);
+        assert_eq!(sink.frames_written(), 2);
+        assert_eq!(sink.last_frame(), &[0.75, 0.0]);
+    }
+
+    /// Oracle: a rendered clip passes through the sink intact.
+    #[test]
+    fn render_to_sink_roundtrip() {
+        let mut osc = Oscillator::sine(440.0);
+        let mut env = Envelope::adsr(0.01, 0.05, 0.6, 0.05);
+        let clip = render_clip(&mut osc, &mut env, 0.1, 4000);
+        let mut sink = SilentSink::new();
+        for frame in clip.chunks(1) {
+            sink.write(frame);
+        }
+        assert_eq!(sink.frames_written(), clip.len() as u64);
+        assert_eq!(sink.last_frame().len(), 1);
     }
 }
