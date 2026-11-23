@@ -732,8 +732,19 @@ fn paint_node(
         WidgetKind::Label { text, px_size } => {
             renderer.label_text(rect, text, *px_size, colors.text);
         }
-        WidgetKind::Button { .. } => {
+        WidgetKind::Button { label, .. } => {
             renderer.button_frame(rect, colors, w.focused, w.pressed);
+            // The label renders inside the frame with the text color.
+            // Previously the label string rode along dead and every
+            // button rendered as a blank chip.
+            let inset = 8.0;
+            let label_rect = Rect2D {
+                x: rect.x + inset,
+                y: rect.y,
+                width: (rect.width - inset * 2.0).max(0.0),
+                height: rect.height,
+            };
+            renderer.label_text(label_rect, label, 14.0, colors.text);
         }
         WidgetKind::Checkbox { checked, .. } => {
             renderer.checkbox(rect, colors, *checked, w.focused);

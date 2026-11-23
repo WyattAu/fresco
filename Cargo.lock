@@ -1125,6 +1125,7 @@ name = "kestrel-gui"
 version = "0.8.7"
 dependencies = [
  "android-activity",
+ "audio-kit",
  "fresco-game",
  "paint-kit",
  "path-kit",

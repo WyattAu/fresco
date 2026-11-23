@@ -135,3 +135,54 @@ fn unreachable_surface() -> Surface {
         None => Surface::with_stride(1, 1, 4).unwrap_or_else(unreachable_surface),
     }
 }
+
+/// REQ-K16 oracle: a button paints its label inside its frame - the
+/// button rect contains text-bright pixels (text color [200,204,214])
+/// far above the button fill [56,60,72]. The pre-fix renderer never
+/// drew the label string and every button rendered as a blank chip.
+#[test]
+fn button_label_paints_inside_frame() {
+    let mut tree = WidgetTree::new();
+    let root = tree.push(WidgetKind::Column { gap: 5.0 });
+    let button = tree.push(WidgetKind::Button {
+        label: "Compose".into(),
+        action: 1,
+    });
+    tree.add_child(root, button);
+    tree.compute(WSize {
+        width: 200.0,
+        height: 80.0,
+    });
+    let Some(w) = tree.widget(button) else {
+        return;
+    };
+    let (bx, by, bw, bh) = (
+        w.rect.x as usize,
+        w.rect.y as usize,
+        w.rect.width as usize,
+        w.rect.height as usize,
+    );
+    let mut surface = Surface::new(200, 80)
+        .unwrap_or_else(|| Surface::with_stride(1, 1, 4).unwrap_or_else(unreachable_surface));
+    let mut painter = Painter::default();
+    paint_tree(&tree, &mut surface, &mut painter, &WidgetColors::default());
+    let mut text_pixels = 0_u64;
+    for row in by..(by + bh).min(80) {
+        for col in bx..(bx + bw).min(200) {
+            let base = (row * 200 + col) * 4;
+            let Some(q) = surface.data().get(base..base + 4) else {
+                continue;
+            };
+            let Ok([r, g, _b, _a]) = <[u8; 4]>::try_from(q) else {
+                continue;
+            };
+            if r > 140 && g > 140 {
+                text_pixels += 1;
+            }
+        }
+    }
+    assert!(
+        text_pixels > 20,
+        "button label must paint text pixels inside the frame: {text_pixels}"
+    );
+}

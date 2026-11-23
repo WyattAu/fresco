@@ -201,6 +201,9 @@ A lower layer must never name a higher layer's types.
   boundary - shadowed widgets paint beyond their rect), `None` leaves
   the previous frame untouched, and `Full` equals `paint_tree`.
   Oracle: `cargo test -p widget-kit --test damage`.
+- REQ-K16 (button label): a button paints its `label` inside the frame
+  with the text color - the string is rendered, not dead data.
+  Oracle: `cargo test -p widget-kit --test a11y_render button_label_paints_inside_frame`.
 
 ## 5. Coverage tier
 

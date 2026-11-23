@@ -103,6 +103,8 @@ Traceability for the fresco engine. REQ identifiers match `SPEC.md` section
   immediate commit, a11y ComboBox + selection.
 - REQ-K15 damage-plan rendering: FramePlan-driven repaint byte-equals
   a full render; None is a no-op.
+- REQ-K16 button label: a button renders its label text inside the
+  frame (previously the label string was never drawn).
 
 ## R11 Process
 
