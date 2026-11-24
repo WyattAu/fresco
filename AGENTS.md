@@ -60,7 +60,10 @@ above 80 percent per published crate.
 
 ## Layout
 
-- `crates/` one crate per directory, workspace members. New in 0.2.0:
+- `crates/` one crate per directory, workspace members. New in 0.8.7:
+  `video-kit` (app-support export layer, ADR-0005): deterministic frame
+  loop over paint-kit surfaces, BMP-sequence oracle sink, mp4 behind the
+  default-off `ffmpeg` feature; `publish = false`. New in 0.2.0:
   `window-kit` (winit behind default feature), `text-kit` (parley behind
   default-off feature). New in 0.3.0: `widget-kit` (a11y-kit via git dep),
   layout-kit gains the `taffy` feature (default off).

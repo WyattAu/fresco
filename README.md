@@ -26,6 +26,7 @@ estate; fresco owns the middle of the stack between semantics and pixels.
 | `widget-kit` | L3 controls | implemented (Gate D spike) | Retained widget model, hit testing, wrapping focus chain, keyboard activation, a11y-kit emission (audited), renderer contract + paint-kit stock renderer; TextField over
   ui-text-edit; AccessKit bridge (feature); gallery golden hashes; theme-kit adapter (WCAG-audited seed + CVD-derived variants); ScrollPane and TabList |
 | `render-conformance` | L3 | implemented | Golden-image differential harness, BMP diff output, buffer hashing. `publish = false` |
+| `video-kit` | L4 export | implemented | Deterministic frame loop over paint-kit surfaces, BMP-sequence oracle sink, FNV-1a frame keys; mp4 backend behind the default-off `ffmpeg` feature (ADR-0005). `publish = false` |
 
 Deferred by ADR: text shaping (`ADR-0002`), windowing (`ADR-0003`), the GPU
 backend (`ADR-0004`), widgets and the reactive layer (`ADR-0001` roadmap).

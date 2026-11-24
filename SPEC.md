@@ -42,6 +42,10 @@ damage-tracked partial redraw as the core performance contract.
   paint-kit, text-kit, a11y-kit via git). Emits audited a11y trees.
 - L3 (`render-conformance`): dev-only, `publish = false`, may depend on
   anything in the workspace.
+- L4 (`video-kit`): app-support export layer above paint-kit,
+  `publish = false` by declaration (ADR-0005): the timed frame loop
+  and the BMP-sequence oracle sink; real output backends behind
+  default-off features.
 
 A lower layer must never name a higher layer's types.
 
@@ -204,6 +208,19 @@ A lower layer must never name a higher layer's types.
 - REQ-K16 (button label): a button paints its `label` inside the frame
   with the text color - the string is rendered, not dead data.
   Oracle: `cargo test -p widget-kit --test a11y_render button_label_paints_inside_frame`.
+- REQ-V1 (deterministic export): exporting the same draw closure twice
+  yields byte-identical frames and identical stats; the frame
+  timestamp is the only input to a draw call, and each frame starts
+  from a zeroed canvas.
+  Oracle: `cargo test -p video-kit export_is_deterministic`.
+- REQ-V2 (BMP sequence sink): the oracle sink writes numbered 24-bit
+  BMPs (`{prefix}_{index:05}.bmp`) whose headers carry the exported
+  dimensions and bit depth, counts frames and bytes, and every
+  written frame parses as a well-formed BMP.
+  Oracle: `cargo test -p video-kit frame_files_parse_as_bmp`.
+- REQ-V3 (timeline reaches pixels): frames taken at different
+  timestamps differ - time drives rendering, not just file naming.
+  Oracle: `cargo test -p video-kit timeline_drives_pixels`.
 
 ## 5. Coverage tier
 

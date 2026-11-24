@@ -20,6 +20,7 @@ members = [
     "crates/text-kit",
     "crates/widget-kit",
     "crates/render-conformance",
+    "crates/video-kit",
 ]
 
 [workspace.package]
