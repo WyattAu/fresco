@@ -153,17 +153,81 @@ fn clip_layered(t: f64, surface: &mut Surface) {
 }
 
 /// The corpus: (scene name, draw fn) pairs.
-/// A corpus scene draw closure.
-type SceneFn = fn(f64, &mut Surface);
+/// A corpus scene draw closure (boxed: the damage-planned scene owns
+/// its widget tree across frames).
+type SceneFn = Box<dyn FnMut(f64, &mut Surface)>;
 
 fn scenes() -> Vec<(&'static str, SceneFn)> {
     vec![
-        ("round_rects", round_rects as SceneFn),
-        ("paths", paths),
-        ("gradients", gradients),
-        ("widgets", widgets),
-        ("clip_layered", clip_layered),
+        (
+            "round_rects",
+            Box::new(round_rects as fn(f64, &mut Surface)),
+        ),
+        ("paths", Box::new(paths)),
+        ("gradients", Box::new(gradients)),
+        ("widgets", Box::new(widgets)),
+        ("clip_layered", Box::new(clip_layered)),
+        ("scene_plan", Box::new(scene_plan_scene())),
     ]
+}
+
+/// The damage-planned leg (scene-kit over widget-kit): the tree lives
+/// across frames, frame 0 repaints fully, later frames repaint only
+/// the damaged title region through `paint_tree_plan`. The exporter's
+/// zeroed canvas keeps the bytes deterministic either way; the golden
+/// keys pin the plan-clipped output.
+fn scene_plan_scene() -> SceneFn {
+    use scene_kit::FramePlan;
+    use widget_kit::{Size2D, WidgetColors, WidgetKind, WidgetTree, paint_tree_plan};
+    let mut tree = WidgetTree::new();
+    let root = tree.push(WidgetKind::Column { gap: 10.0 });
+    let title = tree.push(WidgetKind::Label {
+        text: "frame t=0.00".to_string(),
+        px_size: 16.0,
+    });
+    tree.add_child(root, title);
+    let button = tree.push(WidgetKind::Button {
+        label: "Plan".to_string(),
+        action: 1,
+    });
+    tree.add_child(root, button);
+    let mut primed = false;
+    Box::new(move |t, surface| {
+        surface.fill_solid([20, 22, 30, 255]);
+        tree.compute(Size2D {
+            width: f64::from(W as u32),
+            height: f64::from(H as u32),
+        });
+        let mut title_rect = None;
+        if let Some(w) = tree.widget_mut(title)
+            && let WidgetKind::Label { text, .. } = &mut w.kind
+        {
+            *text = format!("frame t={t:.2}");
+        }
+        if let Some(w) = tree.widget(title) {
+            title_rect = Some(w.rect);
+        }
+        let plan = if primed {
+            match title_rect {
+                Some(r) => FramePlan::Regions(vec![Rect::from_size(
+                    Vec2::new(r.x - 8.0, r.y - 8.0),
+                    Vec2::new(r.width + 16.0, r.height + 16.0),
+                )]),
+                None => FramePlan::Full,
+            }
+        } else {
+            primed = true;
+            FramePlan::Full
+        };
+        let mut painter = Painter::default();
+        paint_tree_plan(
+            &tree,
+            surface,
+            &mut painter,
+            &WidgetColors::default(),
+            &plan,
+        );
+    })
 }
 
 /// Per-frame FNV keys of one scene, exported fresh each call.
@@ -171,7 +235,7 @@ fn frame_hashes(name: &str) -> Result<Vec<u64>, Box<dyn std::error::Error>> {
     use std::sync::atomic::{AtomicU32, Ordering};
     static CALL: AtomicU32 = AtomicU32::new(0);
     let call = CALL.fetch_add(1, Ordering::Relaxed);
-    let draw = scenes()
+    let mut draw = scenes()
         .into_iter()
         .find(|(n, _)| *n == name)
         .map(|(_, f)| f)
@@ -257,6 +321,19 @@ fn baselines() -> Vec<(&'static str, [u64; FRAMES as usize])> {
                 6902717952304666349,
                 10473596762902783930,
                 1162869230861667330,
+            ],
+        ),
+        (
+            "scene_plan",
+            [
+                13511829144483992931,
+                13240202344214726553,
+                13858996453599240091,
+                7244993282459449285,
+                5990880170149175750,
+                15858886401013216948,
+                13158484560330815605,
+                14414172991034216286,
             ],
         ),
     ]

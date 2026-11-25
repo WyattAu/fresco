@@ -267,6 +267,39 @@ impl SilentSink {
     }
 }
 
+/// Write a mono 16-bit PCM WAV file (the interchange format the
+/// video mux consumes). Samples clamp to [-1, 1]. Returns the bytes
+/// written.
+///
+/// # Errors
+/// When the file cannot be created or written.
+pub fn write_wav(path: &std::path::Path, samples: &[f32], rate: u32) -> std::io::Result<u64> {
+    use std::io::Write;
+    let data_len = samples.len() * 2;
+    let file_len = 36 + data_len;
+    let mut out = Vec::with_capacity(44 + data_len);
+    out.extend_from_slice(b"RIFF");
+    out.extend_from_slice(&(file_len as u32).to_le_bytes());
+    out.extend_from_slice(b"WAVE");
+    out.extend_from_slice(b"fmt ");
+    out.extend_from_slice(&16_u32.to_le_bytes());
+    out.extend_from_slice(&1_u16.to_le_bytes()); // PCM
+    out.extend_from_slice(&1_u16.to_le_bytes()); // mono
+    out.extend_from_slice(&rate.to_le_bytes());
+    out.extend_from_slice(&(rate * 2).to_le_bytes());
+    out.extend_from_slice(&2_u16.to_le_bytes());
+    out.extend_from_slice(&16_u16.to_le_bytes());
+    out.extend_from_slice(b"data");
+    out.extend_from_slice(&(data_len as u32).to_le_bytes());
+    for sample in samples {
+        let clamped = sample.clamp(-1.0, 1.0);
+        let value = (clamped * 32767.0) as i16;
+        out.extend_from_slice(&value.to_le_bytes());
+    }
+    std::fs::File::create(path)?.write_all(&out)?;
+    Ok(out.len() as u64)
+}
+
 /// Mix two clips with weights (sums need not be 1.0; the result
 /// clamps to [-1, 1]). Lengths may differ - the output is the
 /// longer of the two.
@@ -419,6 +452,27 @@ mod tests {
         sink.write(&[0.75, 0.0]);
         assert_eq!(sink.frames_written(), 2);
         assert_eq!(sink.last_frame(), &[0.75, 0.0]);
+    }
+
+    /// Oracle: write_wav emits a parseable mono 16-bit PCM header
+    /// carrying the rate, and is deterministic.
+    #[test]
+    fn write_wav_emits_parseable_header() -> Result<(), Box<dyn std::error::Error>> {
+        let path = std::env::temp_dir().join(format!("audio-kit-wav-{}.wav", std::process::id()));
+        let clip = {
+            let mut osc = Oscillator::sine(440.0);
+            let mut env = Envelope::adsr(0.01, 0.05, 0.6, 0.05);
+            render_clip(&mut osc, &mut env, 0.1, 8000)
+        };
+        let a = write_wav(&path, &clip, 8000)?;
+        let b = write_wav(&path, &clip, 8000)?;
+        assert_eq!(a, b, "deterministic");
+        let bytes = std::fs::read(&path)?;
+        assert_eq!(bytes.get(0..4), Some(&b"RIFF"[..]), "riff magic");
+        assert_eq!(bytes.get(8..12), Some(&b"WAVE"[..]), "wave magic");
+        assert_eq!(bytes.get(34..36), Some(&16_u16.to_le_bytes()[..]), "16-bit");
+        let _ = std::fs::remove_file(&path);
+        Ok(())
     }
 
     /// Oracle: a rendered clip passes through the sink intact.

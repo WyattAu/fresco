@@ -23,6 +23,8 @@ default = []
 ffmpeg = []
 
 [dev-dependencies]
+audio-kit = { workspace = true }
+scene-kit = { workspace = true }
 widget-kit = { workspace = true }
 
 [lints.rust]

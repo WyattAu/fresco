@@ -282,6 +282,32 @@ pub mod ffmpeg_pipe {
         /// When the process cannot spawn (binary absent, spawn
         /// failure) or the output path has no parent directory.
         pub fn spawn(output: &Path, width: usize, height: usize, fps: u32) -> io::Result<Self> {
+            Self::spawn_inner(output, width, height, fps, None)
+        }
+
+        /// Spawn the encoder with a mono WAV audio track muxed in
+        /// (audio-kit's `write_wav` output). `-shortest` ends the
+        /// export with the shorter stream.
+        ///
+        /// # Errors
+        /// Same as [`FfmpegPipeSink::spawn`].
+        pub fn spawn_with_audio(
+            output: &Path,
+            width: usize,
+            height: usize,
+            fps: u32,
+            audio_wav: &Path,
+        ) -> io::Result<Self> {
+            Self::spawn_inner(output, width, height, fps, Some(audio_wav))
+        }
+
+        fn spawn_inner(
+            output: &Path,
+            width: usize,
+            height: usize,
+            fps: u32,
+            audio_wav: Option<&Path>,
+        ) -> io::Result<Self> {
             let parent = output.parent().filter(|p| !p.as_os_str().is_empty());
             if let Some(dir) = parent {
                 std::fs::create_dir_all(dir)?;
@@ -299,6 +325,18 @@ pub mod ffmpeg_pipe {
                     &fps.to_string(),
                     "-i",
                     "pipe:0",
+                ])
+                .args(match audio_wav {
+                    Some(wav) => vec![
+                        "-i".to_string(),
+                        wav.display().to_string(),
+                        "-c:a".to_string(),
+                        "aac".to_string(),
+                        "-shortest".to_string(),
+                    ],
+                    None => Vec::new(),
+                })
+                .args([
                     "-c:v",
                     "libx264",
                     "-preset",
@@ -525,6 +563,52 @@ mod tests {
             (0.8..=1.2).contains(&duration),
             "duration ~1.0s (24 frames / 24 fps), got {duration}"
         );
+        let _ = std::fs::remove_dir_all(&dir);
+        Ok(())
+    }
+
+    /// Oracle (ffmpeg feature): a WAV audio track muxes into the
+    /// export - the mp4 carries an audio stream and the duration
+    /// still matches frames/fps; skipped when the binary is absent.
+    #[cfg(feature = "ffmpeg")]
+    #[test]
+    fn ffmpeg_pipe_muxes_audio() -> Result<(), Box<dyn std::error::Error>> {
+        use super::ffmpeg_pipe::FfmpegPipeSink;
+        use std::process::Command;
+        if !super::ffmpeg_pipe::ffmpeg_available() {
+            eprintln!("skip: ffmpeg binary absent");
+            return Ok(());
+        }
+        let dir = scratch_dir("mux");
+        std::fs::create_dir_all(&dir)?;
+        // 2 s of 440 Hz - an audio bed at least as long as the
+        // video, so -shortest ends at the video stream and the
+        // writer never feeds a closed encoder.
+        let wav_path = dir.join("tone.wav");
+        let mut osc = audio_kit::Oscillator::sine(440.0);
+        let mut env = audio_kit::Envelope::adsr(0.01, 0.2, 0.8, 0.1);
+        let clip = audio_kit::render_clip(&mut osc, &mut env, 2.0, 8000);
+        let wav_bytes = audio_kit::write_wav(&wav_path, &clip, 8000)?;
+        assert!(wav_bytes > 8000, "wav carries samples: {wav_bytes}");
+        let out = dir.join("muxed.mp4");
+        let mut sink = FfmpegPipeSink::spawn_with_audio(&out, 320, 180, 24, &wav_path)?;
+        let stats = export(320, 180, 24, 24, &mut sink, &mut shift_draw)?;
+        sink.finish()?;
+        assert_eq!(stats.frames(), 24, "frames piped");
+        let probe = Command::new("ffprobe")
+            .args([
+                "-v",
+                "error",
+                "-show_entries",
+                "stream=codec_type",
+                "-of",
+                "csv=p=0",
+            ])
+            .arg(&out)
+            .output()?;
+        let streams = String::from_utf8_lossy(&probe.stdout).to_string();
+        assert!(streams.contains("video"), "video stream: {streams}");
+        assert!(streams.contains("audio"), "audio stream muxed: {streams}");
         let _ = std::fs::remove_dir_all(&dir);
         Ok(())
     }

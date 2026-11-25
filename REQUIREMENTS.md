@@ -105,6 +105,17 @@ Traceability for the fresco engine. REQ identifiers match `SPEC.md` section
   a full render; None is a no-op.
 - REQ-K16 button label: a button renders its label text inside the
   frame (previously the label string was never drawn).
+- REQ-V1 deterministic export: same draw closure, byte-identical
+  frames; the timestamp is the only input.
+- REQ-V2 BMP sequence sink: numbered 24-bit BMPs with dimension and
+  depth headers; frames and bytes counted.
+- REQ-V3 timeline reaches pixels: frames at different timestamps
+  differ.
+- REQ-V4 corpus: per-frame golden FNV keys across renderer paths,
+  including damage-planned widget timelines.
+- REQ-V5 mp4 pipe: default-off ffmpeg backend; absent binary skips.
+- REQ-V6 audio mux: WAV track muxed in; both streams present.
+- REQ-A1 wav: audio-kit writes deterministic mono 16-bit PCM WAVs.
 
 ## R11 Process
 

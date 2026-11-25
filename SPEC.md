@@ -221,6 +221,22 @@ A lower layer must never name a higher layer's types.
 - REQ-V3 (timeline reaches pixels): frames taken at different
   timestamps differ - time drives rendering, not just file naming.
   Oracle: `cargo test -p video-kit timeline_drives_pixels`.
+- REQ-V4 (corpus): scene corpora across the renderer's paths (shapes,
+  shadows, paths, gradients, widgets, clipped layers, damage-planned
+  widget timelines) pin per-frame FNV keys; every rendered frame
+  matches the checked-in keys.
+  Oracle: `cargo test -p video-kit --test corpus corpus_matches_golden_frame_keys`.
+- REQ-V5 (mp4 pipe): the default-off ffmpeg backend encodes the frame
+  stream into an mp4 whose duration matches frames/fps; a missing
+  binary skips the oracle instead of failing CI.
+  Oracle: `cargo test -p video-kit --features ffmpeg ffmpeg_pipe_encodes_duration`.
+- REQ-V6 (audio mux): a WAV track muxes into the export; the result
+  carries video and audio streams, with `-shortest` ending the clip
+  at the shorter stream.
+  Oracle: `cargo test -p video-kit --features ffmpeg ffmpeg_pipe_muxes_audio`.
+- REQ-A1 (wav): audio-kit writes mono 16-bit PCM WAV files with a
+  parseable RIFF header carrying the sample rate, deterministically.
+  Oracle: `cargo test -p audio-kit write_wav_emits_parseable_header`.
 
 ## 5. Coverage tier
 
