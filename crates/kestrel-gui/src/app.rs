@@ -14,7 +14,7 @@ use winit::window::{Window, WindowId};
 
 use crate::KestrelPanel;
 
-use fresco_game::game::GameScreen;
+use fresco_game::game::{GameScreen, HudButton, hud_button_at};
 
 /// Which screen the shell shows.
 #[derive(Default)]
@@ -45,6 +45,8 @@ struct KestrelApp {
     /// Tracked cursor (winit MouseInput carries no position — the
     /// fresco-android lesson).
     last_cursor: Option<widget_kit::LogicalAt>,
+    /// Last painted logical size (the HUD hit regions are logical).
+    last_logical: (usize, usize),
 }
 
 impl KestrelApp {
@@ -69,6 +71,7 @@ impl KestrelApp {
             ((size.width as f64 / scale).max(1.0) as usize),
             ((size.height as f64 / scale).max(1.0) as usize),
         );
+        self.last_logical = (lwu, lhu);
         let (wu, hu) = (size.width.max(1) as usize, size.height.max(1) as usize);
 
         // Sim only while playing.
@@ -165,6 +168,29 @@ impl KestrelApp {
             self.game = GameScreen::new();
             self.state = AppState::Game;
         }
+    }
+
+    /// A press while the game is showing: HUD overlay buttons take
+    /// priority over game input (the fresco-game shell's routing,
+    /// mirrored). Menu returns to the panel and refreshes the best.
+    fn game_press(&mut self, at: widget_kit::LogicalAt) {
+        let (lw, lh) = (
+            f64::from(self.last_logical.0.max(1) as u32),
+            f64::from(self.last_logical.1.max(1) as u32),
+        );
+        match hud_button_at(lw, lh, at.x, at.y) {
+            Some(HudButton::Pause) => self.game.toggle_pause(),
+            Some(HudButton::Menu) => {
+                self.state = AppState::Menu;
+                self.panel.set_best(fresco_game::best_score());
+            }
+            None => self.game.pointer_down(at.x, at.y),
+        }
+    }
+
+    /// A release while the game is showing.
+    fn game_release(&mut self, at: widget_kit::LogicalAt) {
+        self.game.pointer_up(at.x, at.y);
     }
 
     fn pointer_at(&self, position: winit::dpi::PhysicalPosition<f64>) -> widget_kit::LogicalAt {
@@ -269,14 +295,14 @@ impl ApplicationHandler for KestrelApp {
                     match state {
                         winit::event::ElementState::Pressed => match self.state {
                             AppState::Menu => self.panel.pointer_down(at.x, at.y),
-                            AppState::Game => self.game.pointer_down(at.x, at.y),
+                            AppState::Game => self.game_press(at),
                         },
                         winit::event::ElementState::Released => match self.state {
                             AppState::Menu => {
                                 self.panel.pointer_up(at.x, at.y);
                                 self.maybe_start_game();
                             }
-                            AppState::Game => self.game.pointer_up(at.x, at.y),
+                            AppState::Game => self.game_release(at),
                         },
                     }
                 }
@@ -286,16 +312,25 @@ impl ApplicationHandler for KestrelApp {
             WindowEvent::Touch(touch) => {
                 let at = self.pointer_at(touch.location);
                 match touch.phase {
-                    winit::event::TouchPhase::Started => {
-                        self.panel.pointer_down(at.x, at.y);
-                    }
+                    winit::event::TouchPhase::Started => match self.state {
+                        AppState::Menu => self.panel.pointer_down(at.x, at.y),
+                        // The touch path previously drove the panel in
+                        // every state - gameplay input was dead on
+                        // Android. Route per state, HUD buttons first.
+                        AppState::Game => self.game_press(at),
+                    },
                     winit::event::TouchPhase::Ended | winit::event::TouchPhase::Cancelled => {
-                        self.panel.pointer_up(at.x, at.y);
-                        // Touch taps activate buttons through
-                        // pointer_up - the mouse path's
-                        // maybe_start_game call is not enough on
-                        // Android (the touch lesson again).
-                        self.maybe_start_game();
+                        match self.state {
+                            AppState::Menu => {
+                                self.panel.pointer_up(at.x, at.y);
+                                // Touch taps activate buttons through
+                                // pointer_up - the mouse path's
+                                // maybe_start_game call is not enough
+                                // on Android (the touch lesson again).
+                                self.maybe_start_game();
+                            }
+                            AppState::Game => self.game_release(at),
+                        }
                     }
                     _ => {}
                 }
