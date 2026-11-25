@@ -29,7 +29,7 @@ estate; fresco owns the middle of the stack between semantics and pixels.
 | `video-kit` | L4 export | implemented | Deterministic frame loop over paint-kit surfaces, BMP-sequence oracle sink, FNV-1a frame keys; mp4 backend behind the default-off `ffmpeg` feature (ADR-0005). `publish = false` |
 
 Deferred by ADR: text shaping (`ADR-0002`), windowing (`ADR-0003`), the GPU
-backend (`ADR-0004`), widgets and the reactive layer (`ADR-0001` roadmap).
+backend (`ADR-0004`; placement and start triggers in `ADR-0006`), widgets and the reactive layer (`ADR-0001` roadmap).
 
 ## Quick start
 
