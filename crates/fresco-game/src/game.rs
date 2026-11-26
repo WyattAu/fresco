@@ -131,7 +131,9 @@ pub enum HudButton {
 #[must_use]
 pub fn hud_button_at(width: f64, height: f64, x: f64, y: f64) -> Option<HudButton> {
     let _ = height;
-    let row = 4.0..=30.0;
+    // Below the ~24dp status bar inset (a non-immersive app's top
+    // 24dp is system territory - taps there never reach the game).
+    let row = 30.0..=56.0;
     let pause_x = (width - 54.0)..=(width - 8.0);
     let menu_x = (width - 118.0)..=(width - 58.0);
     if !row.contains(&y) {
@@ -1132,7 +1134,7 @@ impl GameScreen {
             &mut hud,
             widget_kit::Rect2D {
                 x: 8.0,
-                y: 4.0,
+                y: 30.0,
                 width: self.width - 16.0,
                 height: 20.0,
             },
@@ -1149,7 +1151,7 @@ impl GameScreen {
             &mut hud,
             widget_kit::Rect2D {
                 x: 8.0,
-                y: 26.0,
+                y: 52.0,
                 width: self.width - 16.0,
                 height: 18.0,
             },
@@ -1164,7 +1166,7 @@ impl GameScreen {
             &mut hud,
             widget_kit::Rect2D {
                 x: self.width - 52.0,
-                y: 6.0,
+                y: 32.0,
                 width: 46.0,
                 height: 18.0,
             },
@@ -1176,7 +1178,7 @@ impl GameScreen {
             &mut hud,
             widget_kit::Rect2D {
                 x: self.width - 114.0,
-                y: 6.0,
+                y: 32.0,
                 width: 54.0,
                 height: 18.0,
             },
@@ -1189,7 +1191,7 @@ impl GameScreen {
                 &mut hud,
                 widget_kit::Rect2D {
                     x: 8.0,
-                    y: 46.0,
+                    y: 72.0,
                     width: self.width - 16.0,
                     height: 18.0,
                 },
@@ -1777,15 +1779,22 @@ mod tests {
     #[test]
     fn hud_button_regions() {
         use HudButton;
+        // The row sits below the status bar inset: taps in the bar's
+        // band (y < 30) are system territory and must not hit.
         assert_eq!(
             hud_button_at(360.0, 740.0, 330.0, 15.0),
+            None,
+            "status-bar band is not the HUD"
+        );
+        assert_eq!(
+            hud_button_at(360.0, 740.0, 330.0, 43.0),
             Some(HudButton::Pause)
         );
         assert_eq!(
-            hud_button_at(360.0, 740.0, 280.0, 15.0),
+            hud_button_at(360.0, 740.0, 280.0, 43.0),
             Some(HudButton::Menu)
         );
-        assert_eq!(hud_button_at(360.0, 740.0, 180.0, 15.0), None);
+        assert_eq!(hud_button_at(360.0, 740.0, 180.0, 43.0), None);
         assert_eq!(
             hud_button_at(360.0, 740.0, 330.0, 100.0),
             None,
