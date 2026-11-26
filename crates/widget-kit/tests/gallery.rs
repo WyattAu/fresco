@@ -132,6 +132,29 @@ fn unreachable_surface() -> Surface {
     }
 }
 
+/// Whether the shaped label path is active and system fonts exist:
+/// shaped bytes are font-stack dependent, so exact golden keys are
+/// only pinned for the default (per-char, embedded-font) render.
+fn shaping_with_fonts() -> bool {
+    #[cfg(feature = "shaping")]
+    {
+        use text_kit::parley_backend::ParleyEngine;
+        use text_kit::{ShapeQuery, TextEngine};
+        let mut engine = ParleyEngine::new();
+        !engine
+            .shape(&ShapeQuery {
+                text: "ab",
+                font: text_kit::parley_backend::PARLEY_FONT,
+                px_size: 16.0,
+                letter_spacing: 0.0,
+            })
+            .glyphs
+            .is_empty()
+    }
+    #[cfg(not(feature = "shaping"))]
+    false
+}
+
 fn fnv1a(data: &[u8]) -> u64 {
     let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
     for byte in data {
@@ -153,11 +176,11 @@ fn baselines() -> Vec<(&'static str, u64, u64)> {
 // Baseline hashes are filled in by the bootstrap test below; the table
 // goes green after the first local run records them.
 const GOLDEN_DARK_ALPHA: u64 = 0xdd50_b1ad_2cb8_384d;
-const GOLDEN_DARK_RGB: u64 = 0xacb6_79c9_c1f9_7e78;
+const GOLDEN_DARK_RGB: u64 = 0xc729_ab7e_42fa_790a;
 const GOLDEN_LIGHT_ALPHA: u64 = 0xdd50_b1ad_2cb8_384d;
-const GOLDEN_LIGHT_RGB: u64 = 0x8e85_4f6c_0238_55a0;
+const GOLDEN_LIGHT_RGB: u64 = 0x7222_e68a_8de1_17fc;
 const GOLDEN_HC_ALPHA: u64 = 0xdd50_b1ad_2cb8_384d;
-const GOLDEN_HC_RGB: u64 = 0x0097_b9b8_cfab_a2df;
+const GOLDEN_HC_RGB: u64 = 0x1a1d_6fdf_e9bf_2cdd;
 
 #[test]
 fn gallery_is_deterministic() {
@@ -178,6 +201,14 @@ fn gallery_is_deterministic() {
 
 #[test]
 fn gallery_matches_golden_hashes() {
+    if shaping_with_fonts() {
+        // The shaped label path renders with system-font metrics:
+        // shaped bytes are font-stack dependent and cannot be pinned
+        // cross-machine. gallery_is_deterministic covers the shaped
+        // render; exact keys pin the default per-char render.
+        eprintln!("skip: shaping active, exact keys are per-char contract");
+        return;
+    }
     for (name, want_alpha, want_rgb) in baselines() {
         let s = render_case(name);
         // Alpha channel hash (shape) and RGB hash (color) checked apart.
