@@ -1808,7 +1808,7 @@ dependencies = [
 [[package]]
 name = "plycore"
 version = "0.2.1"
-source = "git+https://github.com/WyattAu/plychart#651b4effa234a86365ef890cbeaf0124cd11d30a"
+source = "git+https://github.com/WyattAu/plychart#ea9c4877fb63602bfe080f601a97fc96e9adf85e"
 dependencies = [
  "serde",
  "serde_json",
