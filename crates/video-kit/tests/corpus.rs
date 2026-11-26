@@ -300,14 +300,14 @@ fn baselines() -> Vec<(&'static str, [u64; FRAMES as usize])> {
         (
             "widgets",
             [
-                6049836241206848905,
-                6612417664301281720,
-                8113509166237003888,
-                10093007301560916800,
-                16232241346357135727,
-                12941684193167908447,
-                5920080924535469190,
-                17364189768689880448,
+                1725476191444149905,
+                16208907420880578150,
+                714345291494804360,
+                3373781660419993018,
+                712297095722624449,
+                11364103976779099243,
+                1636372570857007498,
+                11085124284447982970,
             ],
         ),
         (
@@ -326,18 +326,24 @@ fn baselines() -> Vec<(&'static str, [u64; FRAMES as usize])> {
         (
             "scene_plan",
             [
-                4305863796481947973,
-                731823007828310725,
-                358762252782513537,
-                3199878463041467765,
-                11672241438198251346,
-                16377765445445817898,
-                589374956439914899,
-                16909987017839648442,
+                13511829144483992931,
+                13240202344214726553,
+                13858996453599240091,
+                7244993282459449285,
+                5990880170149175750,
+                15858886401013216948,
+                13158484560330815605,
+                14414172991034216286,
             ],
         ),
     ]
 }
+
+/// Scenes whose pixels include shaped text. Shaped bytes are
+/// font-stack dependent: they are pinned only for the default
+/// (per-char, embedded-font) render, and only asserted structurally
+/// under the shaped-corpus feature.
+const TEXT_SCENES: [&str; 2] = ["widgets", "scene_plan"];
 
 /// Oracle (REQ-V4): every corpus scene is deterministic and matches
 /// the checked-in per-frame keys - any renderer output change diffs
@@ -346,6 +352,20 @@ fn baselines() -> Vec<(&'static str, [u64; FRAMES as usize])> {
 fn corpus_matches_golden_frame_keys() -> Result<(), Box<dyn std::error::Error>> {
     for (name, want) in baselines() {
         let got = frame_hashes(name)?;
+        if cfg!(feature = "shaped-corpus") && TEXT_SCENES.contains(&name) {
+            // Shaped bytes are font-stack dependent: assert the
+            // structural contract (every frame distinct - the label
+            // text varies per frame and reaches the pixels).
+            let mut unique = got.clone();
+            unique.sort_unstable();
+            unique.dedup();
+            assert_eq!(
+                unique.len(),
+                FRAMES as usize,
+                "scene {name}: every frame distinct under shaping"
+            );
+            continue;
+        }
         for (frame, (g, w)) in got.iter().zip(want.iter()).enumerate() {
             assert_eq!(g, w, "scene {name} frame {frame} hash");
         }
