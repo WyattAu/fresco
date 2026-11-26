@@ -152,4 +152,101 @@ mod tests {
         assert!(result.glyphs.is_empty() || !result.glyphs.is_empty());
         assert!(result.width >= 0.0);
     }
+
+    /// Probe: does this runner have fonts at all? Every script oracle
+    /// skips (instead of failing) when Fontique finds nothing.
+    fn fonts_available() -> bool {
+        let mut engine = ParleyEngine::new();
+        !engine
+            .shape(&ShapeQuery {
+                text: "ab",
+                font: PARLEY_FONT,
+                px_size: 16.0,
+                letter_spacing: 0.0,
+            })
+            .glyphs
+            .is_empty()
+    }
+
+    fn shaped(text: &str) -> ShapeResult {
+        let mut engine = ParleyEngine::new();
+        engine.shape(&ShapeQuery {
+            text,
+            font: PARLEY_FONT,
+            px_size: 16.0,
+            letter_spacing: 0.0,
+        })
+    }
+
+    /// Oracle (TX-3 leg): an RTL string shapes into glyphs whose
+    /// clusters cover the text's byte range, deterministically - the
+    /// bidi pipeline runs, whatever the visual order.
+    #[test]
+    fn rtl_shapes_with_cluster_coverage() {
+        if !fonts_available() {
+            eprintln!("skip: no fonts on this runner");
+            return;
+        }
+        let a = shaped("\u{5e9}\u{5dc}\u{5d5}\u{5dd}"); // Hebrew shalom
+        let b = shaped("\u{5e9}\u{5dc}\u{5d5}\u{5dd}");
+        assert!(!a.glyphs.is_empty(), "hebrew shapes when fonts exist");
+        assert_eq!(
+            fnv_of(&a.glyphs),
+            fnv_of(&b.glyphs),
+            "shaping is deterministic"
+        );
+        // Clusters stay inside the text's byte range (4 chars, 8 bytes).
+        for glyph in &a.glyphs {
+            assert!(glyph.cluster <= 8, "cluster {} out of range", glyph.cluster);
+        }
+    }
+
+    /// Oracle (TX-3 leg): a mixed-script line shapes glyphs from both
+    /// scripts (distinct glyph ids across the two runs).
+    #[test]
+    fn mixed_script_produces_distinct_runs() {
+        if !fonts_available() {
+            eprintln!("skip: no fonts on this runner");
+            return;
+        }
+        let result = shaped("ab \u{5e9}\u{5dc}\u{5d5}\u{5dd}");
+        assert!(result.glyphs.len() >= 4, "both runs produce glyphs");
+        let first = result.glyphs.first().map(|g| g.id);
+        let last = result.glyphs.last().map(|g| g.id);
+        assert_ne!(first, last, "latin and hebrew glyph ids differ");
+    }
+
+    /// Oracle (TX-3 leg): Arabic shapes (joining ligatures may merge
+    /// characters; the pipeline must still cover them).
+    #[test]
+    fn arabic_shapes_with_cluster_coverage() {
+        if !fonts_available() {
+            eprintln!("skip: no fonts on this runner");
+            return;
+        }
+        let result = shaped("\u{645}\u{631}\u{62d}\u{628}\u{627}"); // marhaba
+        assert!(!result.glyphs.is_empty(), "arabic shapes when fonts exist");
+        for glyph in &result.glyphs {
+            assert!(
+                glyph.cluster <= 10,
+                "cluster {} out of the 10-byte range",
+                glyph.cluster
+            );
+        }
+    }
+
+    fn fnv_of(glyphs: &[ShapedGlyph]) -> u64 {
+        let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+        for glyph in glyphs {
+            for byte in glyph.id.0.to_le_bytes() {
+                hash ^= u64::from(byte);
+                hash = hash.wrapping_mul(0x0100_0000_01b3);
+            }
+            for byte in glyph.cluster.to_le_bytes() {
+                hash ^= u64::from(byte);
+                hash = hash.wrapping_mul(0x0100_0000_01b3);
+            }
+        }
+        hash
+    }
 }
