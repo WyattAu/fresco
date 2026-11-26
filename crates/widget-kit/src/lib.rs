@@ -230,6 +230,11 @@ impl Widget {
                 | WidgetKind::Checkbox { .. }
                 | WidgetKind::TreeList { .. }
                 | WidgetKind::Select { .. }
+                // AK-2: the tab chain previously skipped text fields
+                // and tab lists - keyboard-only users could not reach
+                // them at all.
+                | WidgetKind::TextField { .. }
+                | WidgetKind::TabList { .. }
         )
     }
 
@@ -1239,6 +1244,96 @@ mod tests {
         assert!(rr.width > 0.0 && rr.height > 0.0);
         assert!(br.width >= rr.width || br.width > 0.0);
         assert!((br.y - rr.y).abs() < 1e-9, "button inside row row-band");
+    }
+
+    /// Oracle (AK-2): every focusable widget kind participates in
+    /// the tab chain exactly once, non-focusable kinds are skipped,
+    /// and Enter/Space activation works across the set.
+    #[test]
+    fn keyboard_parity_over_the_full_set() {
+        use WidgetKind;
+        let mut tree = WidgetTree::new();
+        let root = tree.push(WidgetKind::Column { gap: 6.0 });
+        let label = tree.push(WidgetKind::Label {
+            text: "static".to_string(),
+            px_size: 12.0,
+        });
+        tree.add_child(root, label);
+        let button = tree.push(WidgetKind::Button {
+            label: "b".to_string(),
+            action: 1,
+        });
+        tree.add_child(root, button);
+        let checkbox = tree.push(WidgetKind::Checkbox {
+            label: "c".to_string(),
+            checked: false,
+        });
+        tree.add_child(root, checkbox);
+        let field = tree.push(WidgetKind::TextField {
+            placeholder: "p".to_string(),
+            field: TextEditField::new(StringBuffer::new()),
+        });
+        tree.add_child(root, field);
+        let select = tree.push(WidgetKind::Select {
+            options: vec!["a".to_string(), "b".to_string()],
+            selected: 0,
+            open: false,
+        });
+        tree.add_child(root, select);
+        let tabs = tree.push(WidgetKind::TabList {
+            tabs: vec!["t1".to_string(), "t2".to_string()],
+            active: 0,
+        });
+        tree.add_child(root, tabs);
+        let tree_list = tree.push(WidgetKind::TreeList {
+            items: vec![
+                TreeItem {
+                    label: "i1".to_string(),
+                    depth: 0,
+                    has_children: false,
+                    expanded: false,
+                },
+                TreeItem {
+                    label: "i2".to_string(),
+                    depth: 0,
+                    has_children: false,
+                    expanded: false,
+                },
+            ],
+            selected: 0,
+        });
+        tree.add_child(root, tree_list);
+        tree.compute(Size2D {
+            width: 320.0,
+            height: 400.0,
+        });
+
+        // Tab walks every focusable kind once; the label is skipped.
+        let mut visited: Vec<WidgetRef> = Vec::new();
+        for _ in 0..8 {
+            tree.key_nav(NavKey::Tab);
+            if let Some(current) = tree.focus()
+                && !visited.contains(&current)
+            {
+                visited.push(current);
+            }
+        }
+        assert_eq!(visited.len(), 6, "six focusable kinds visited: {visited:?}");
+        assert!(!visited.contains(&label), "labels are not focusable");
+
+        // Enter activates the focused button.
+        tree.set_focus(Some(button));
+        tree.key_char('\n');
+        assert!(tree.take_actions().contains(&1), "button activates");
+
+        // Space toggles the focused checkbox.
+        tree.set_focus(Some(checkbox));
+        tree.key_char(' ');
+        let checked = matches!(
+            tree.widget(checkbox).map(|w| &w.kind),
+            Some(WidgetKind::Checkbox { checked: true, .. })
+        );
+        assert!(checked, "space toggles the checkbox");
     }
 
     #[test]
