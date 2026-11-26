@@ -1,5 +1,53 @@
 # CHANGELOG
 
+## 0.8.7 (2026-11-26)
+
+Consolidates the 0.8.7 cycle (2026-11-15 through 2026-11-26): the game,
+fluid, animation, audio, video, and consumer-shell arcs, four new
+crates, and two new ADRs. 510 workspace tests; verified on device at
+60 fps on a Pixel 10 Pro, an A53, and a Galaxy S7 (API 26).
+
+- New crate `fresco-game`: the deterministic 2D game (sprite atlas,
+  grab-and-fling input, targets and score, combo chains, drift,
+  widget-kit menu, pause and menu navigation, persisted high score,
+  SFX through audio-kit, glTF-imported skinned-and-animated dancer,
+  SPH water pool with two-way coupling, HUD below the status bar
+  inset).
+- New crate `fluid-kit`: SPH particle fluid solver (CFL stepping,
+  XSPH smoothing, velocity and acceleration ceilings).
+- New crate `three-kit`: animation clip text importer, a
+  depth-capped JSON parser, and a glTF 2.0 subset loader (mesh,
+  skin, animation samplers; base64 data URIs; component-size-aware
+  accessor reads).
+- New crate `audio-kit`: deterministic synth core (oscillator,
+  envelope, clip render, mix), the SilentSink output backend, and
+  WAV export.
+- New crate `video-kit`: deterministic video export (ADR-0005) - a
+  timed frame loop over paint-kit surfaces, a BMP-sequence oracle
+  sink, an ffmpeg mp4 pipe backend with audio muxing behind a
+  default-off feature, and a renderer corpus (per-frame FNV golden
+  keys across shapes, shadows, paths, gradients, widgets, clipped
+  layers, and damage-planned widget timelines) with a stress bench.
+- New crate `kestrel-gui`: the consumer application shell (desktop
+  windowed shell, Android packaging, the fresco game integrated,
+  persisted-best display, button click audio, the game-to-menu
+  loop).
+- text-kit: realfont, embedded DejaVu Sans glyph rendering with
+  notdef semantics.
+- fresco-android: logical-resolution rendering (raw physical pixels
+  land 3x off on 3x screens).
+- widget-kit: buttons render their label text (the label string was
+  previously never drawn), region clips fixed.
+- paint-kit: band-span clamp plus a solid-fill fast path, and the
+  shared blit gained an integer-scale row-repeat path (A53 33 fps
+  bottleneck).
+- Decisions: ADR-0005 (deterministic video export; the CPU render is
+  the corpus), ADR-0006 (GPU paint backend placement in
+  `paint-gpu-kit` and its measurable start triggers), and the
+  approved decision queue (persist storage relocation, SPH CFL+XSPH
+  hardening, ball-pool impulse exchange, menu keyboard
+  accessibility).
+
 ## 0.5.1 (2026-11-07)
 
 Gate A evidence, collected on a live display.
