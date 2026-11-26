@@ -5,10 +5,11 @@
 //! selection is the system sans-serif family; font collection is
 //! Fontique's job, out of scope here.
 //!
-//! v0 approximations, documented: per-glyph cluster is the run's first
-//! cluster byte (bidi-correct per-glyph mapping is a Parley internals
-//! question), and baseline stepping uses the estate line height rather
-//! than Parley's per-line metrics.
+//! Granularity: one shaped entry per grapheme cluster (text range,
+//! advance, direction) - the per-char renderer's natural unit.
+//! Baseline stepping uses the estate line height rather than
+//! Parley's per-line metrics; x placement is cursor-based in the
+//! renderer (clusters arrive in visual order per run).
 
 use parley::{FontContext, FontFamily, Layout, LayoutContext, PositionedLayoutItem, StyleProperty};
 
@@ -61,16 +62,23 @@ impl ParleyEngine {
             let start = glyphs.len();
             let mut width = 0.0_f64;
             for item in line.items() {
-                if let PositionedLayoutItem::GlyphRun(run) = item {
-                    let cluster = run.run().cluster_range().start as u32;
-                    for g in run.positioned_glyphs() {
-                        width += f64::from(g.advance);
+                if let PositionedLayoutItem::GlyphRun(glyph_run) = item {
+                    let rtl = glyph_run.run().is_rtl();
+                    // One ShapedGlyph per grapheme cluster: the
+                    // per-char renderer's natural unit (ligature
+                    // clusters collapse to one entry).
+                    for cluster in glyph_run.run().clusters() {
+                        let range = cluster.text_range();
+                        let advance = f64::from(cluster.advance());
+                        width += advance;
+                        let gid = cluster.glyphs().next().map(|g| g.id).unwrap_or(0);
                         glyphs.push(ShapedGlyph {
-                            id: GlyphId(g.id),
-                            cluster,
-                            x_advance: f64::from(g.advance),
-                            x_offset: f64::from(g.x),
-                            y_offset: f64::from(g.y),
+                            id: GlyphId(gid),
+                            cluster: range.start as u32,
+                            rtl,
+                            x_advance: advance,
+                            x_offset: 0.0,
+                            y_offset: 0.0,
                         });
                     }
                 }
@@ -214,6 +222,21 @@ mod tests {
         let first = result.glyphs.first().map(|g| g.id);
         let last = result.glyphs.last().map(|g| g.id);
         assert_ne!(first, last, "latin and hebrew glyph ids differ");
+    }
+
+    /// Oracle (TX-1): run direction lands on the glyph - latin runs
+    /// are LTR, hebrew runs are RTL.
+    #[test]
+    fn run_direction_reaches_glyphs() {
+        if !fonts_available() {
+            eprintln!("skip: no fonts on this runner");
+            return;
+        }
+        let latin = shaped("ab");
+        assert!(latin.glyphs.iter().all(|g| !g.rtl), "latin runs are ltr");
+        let hebrew = shaped("\u{5e9}\u{5dc}\u{5d5}\u{5dd}");
+        assert!(!hebrew.glyphs.is_empty(), "hebrew shapes");
+        assert!(hebrew.glyphs.iter().all(|g| g.rtl), "hebrew runs are rtl");
     }
 
     /// Oracle (TX-3 leg): Arabic shapes (joining ligatures may merge

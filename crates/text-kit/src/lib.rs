@@ -60,6 +60,9 @@ pub struct ShapedGlyph {
     pub id: GlyphId,
     /// Byte index of the cluster start in the source text.
     pub cluster: u32,
+    /// Whether the glyph belongs to a right-to-left run (visual
+    /// order runs right-to-left; advances accumulate rightward).
+    pub rtl: bool,
     /// Advance along the reading axis, pixels.
     pub x_advance: f64,
     /// Offset from the pen position, pixels.

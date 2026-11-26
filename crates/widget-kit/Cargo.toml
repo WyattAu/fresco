@@ -22,8 +22,11 @@ a11y-kit = { git = "https://github.com/WyattAu/a11y-kit", version = "0.2.1" }
 ui-text-edit = "0.1"
 
 [features]
+# Shaped labels: Parley (via text-kit) provides bidi-correct glyph
+# order and font-metric advances; default on.
+shaping = ["text-kit/parley"]
 strip-renderer = ["paint-kit/sparse-strip"]
-default = []
+default = ["shaping"]
 accesskit = ["dep:accesskit"]
 
 [dependencies.accesskit]

@@ -225,6 +225,166 @@ impl DrawListPainter<'_> {
     }
 }
 
+impl DrawListPainter<'_> {
+    /// Draw `text` through Parley shaping: bidi-correct glyph order
+    /// and font-metric advances (line-absolute x offsets), with
+    /// realfont bitmaps and the micro-font fallback for ink. Returns
+    /// false when shaping cannot serve the label (fontless runner,
+    /// mixed-direction line), so the caller falls back to the
+    /// per-char path.
+    #[cfg(feature = "shaping")]
+    fn shaped_label(&mut self, rect: Rect2D, text: &str, px_size: f64, color: [u8; 4]) -> bool {
+        use std::cell::RefCell;
+        use text_kit::{LayoutQuery, TextEngine};
+        thread_local! {
+            static ENGINE: RefCell<text_kit::parley_backend::ParleyEngine> =
+                RefCell::new(text_kit::parley_backend::ParleyEngine::new());
+        }
+        let result = ENGINE.with(|engine| {
+            engine.borrow_mut().layout(&LayoutQuery {
+                text,
+                font: text_kit::parley_backend::PARLEY_FONT,
+                px_size,
+                max_width: None,
+                line_height: px_size * 1.2,
+            })
+        });
+        let Some(line) = result.lines.first() else {
+            return false;
+        };
+        let Some(glyphs) = result.glyphs.get(line.glyphs.start..line.glyphs.end) else {
+            return false;
+        };
+        let Some(first) = glyphs.first() else {
+            return false;
+        };
+        let rtl = first.rtl;
+        if glyphs.iter().any(|glyph| glyph.rtl != rtl) {
+            return false; // mixed directions need per-run placement
+        }
+        let baseline_y = rect.y + (rect.height * 0.5) + (px_size * 0.35);
+        let start_x = rect.x + 2.0;
+        let total = line.width;
+        let mut consumed = 0.0_f64;
+        for glyph in glyphs {
+            // The char under the glyph's cluster (floor to a char
+            // boundary). Clusters arrive in visual order: LTR lines
+            // place left-to-right, RTL lines right-to-left.
+            let mut idx = (glyph.cluster as usize).min(text.len());
+            while idx > 0 && !text.is_char_boundary(idx) {
+                idx -= 1;
+            }
+            let Some(ch) = text[idx..].chars().next() else {
+                continue;
+            };
+            let x0 = if glyph.rtl {
+                consumed += glyph.x_advance;
+                start_x + total - consumed
+            } else {
+                let x = start_x + consumed;
+                consumed += glyph.x_advance;
+                x
+            };
+            let rg = text_kit::realfont::glyph(ch, px_size);
+            match rg {
+                Some(g) => {
+                    self.blit_font_glyph(&g, x0 + g.left_bearing, baseline_y, color);
+                }
+                None => {
+                    let scale = ((px_size / 5.0).round() as u32).max(1);
+                    if let Some(bitmap) = microfont::micro_bitmap(ch, scale) {
+                        self.blit_micro_glyph(&bitmap, x0, baseline_y + px_size * 0.35, color);
+                    }
+                }
+            }
+        }
+        true
+    }
+
+    /// Blend one realfont coverage bitmap at (x0, baseline_y +
+    /// top_offset).
+    #[cfg(feature = "shaping")]
+    fn blit_font_glyph(
+        &mut self,
+        g: &text_kit::realfont::FontGlyph,
+        x0: f64,
+        baseline_y: f64,
+        color: [u8; 4],
+    ) {
+        let y0 = baseline_y + g.top_offset;
+        for gy in 0..g.height {
+            for gx in 0..g.width {
+                let idx = gy * g.width + gx;
+                let cov = match g.coverage.get(idx) {
+                    Some(&c) => c,
+                    None => continue,
+                };
+                if cov == 0 {
+                    continue;
+                }
+                let alpha = f64::from(cov) / 255.0 * (f64::from(color[3]) / 255.0);
+                let px = [
+                    ((f64::from(color[0]) / 255.0).sqrt() * 255.0).round() as u8,
+                    ((f64::from(color[1]) / 255.0).sqrt() * 255.0).round() as u8,
+                    ((f64::from(color[2]) / 255.0).sqrt() * 255.0).round() as u8,
+                    (alpha * 255.0).round() as u8,
+                ];
+                let dx = x0 + gx as f64;
+                let dy = y0 + gy as f64;
+                if self.text_pixel_clipped(dx, dy) {
+                    continue;
+                }
+                self.surface.blend_pixel(
+                    usize::try_from(dx as i64).unwrap_or(0),
+                    usize::try_from(dy as i64).unwrap_or(0),
+                    px,
+                );
+            }
+        }
+    }
+
+    /// Blend one micro-font bitmap whose top-left sits at
+    /// (x0, y0).
+    #[cfg(feature = "shaping")]
+    fn blit_micro_glyph(
+        &mut self,
+        bitmap: &text_kit::GlyphBitmap,
+        x0: f64,
+        y0: f64,
+        color: [u8; 4],
+    ) {
+        for gy in 0..bitmap.height {
+            for gx in 0..bitmap.width {
+                let idx = gy as usize * bitmap.width as usize + gx as usize;
+                let cov = match bitmap.coverage.get(idx) {
+                    Some(&c) => c,
+                    None => continue,
+                };
+                if cov == 0 {
+                    continue;
+                }
+                let alpha = f64::from(cov) / 255.0 * (f64::from(color[3]) / 255.0);
+                let px = [
+                    ((f64::from(color[0]) / 255.0).sqrt() * 255.0).round() as u8,
+                    ((f64::from(color[1]) / 255.0).sqrt() * 255.0).round() as u8,
+                    ((f64::from(color[2]) / 255.0).sqrt() * 255.0).round() as u8,
+                    (alpha * 255.0).round() as u8,
+                ];
+                let dx = x0 + gx as f64;
+                let dy = y0 + gy as f64;
+                if self.text_pixel_clipped(dx, dy) {
+                    continue;
+                }
+                self.surface.blend_pixel(
+                    usize::try_from(dx as i64).unwrap_or(0),
+                    usize::try_from(dy as i64).unwrap_or(0),
+                    px,
+                );
+            }
+        }
+    }
+}
+
 impl WidgetRenderer for DrawListPainter<'_> {
     fn push_clip(&mut self, rect: Rect2D) {
         // Delegate to the painter's clip stack: fills intersect with
@@ -241,6 +401,16 @@ impl WidgetRenderer for DrawListPainter<'_> {
     }
 
     fn label_text(&mut self, rect: Rect2D, text: &str, px_size: f64, color: [u8; 4]) {
+        // Shaped path first (TX-1): Parley gives bidi-correct glyph
+        // order and font-metric advances; realfont supplies the
+        // bitmaps. Falls back to the per-char path when shaping is
+        // off, yields nothing (fontless runner), or the line mixes
+        // directions (mixed runs need per-run placement, not yet
+        // implemented). Both paths fully deterministic.
+        #[cfg(feature = "shaping")]
+        if self.shaped_label(rect, text, px_size, color) {
+            return;
+        }
         // Real-font glyphs first (embedded DejaVu Sans, anti-aliased
         // coverage at any px size); micro-font fallback for chars the
         // real font lacks. Both paths fully deterministic.

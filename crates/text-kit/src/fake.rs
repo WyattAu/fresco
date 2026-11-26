@@ -50,6 +50,7 @@ impl TextEngine for FakeEngine {
                 x_advance: advance,
                 x_offset: 0.0,
                 y_offset: 0.0,
+                rtl: false,
             });
             width += advance;
         }

@@ -11,13 +11,13 @@ categories = ["graphics", "text-processing"]
 exclude = ["/target"]
 
 [features]
-default = []
+default = ["parley"]
 parley = ["dep:parley"]
 
 [dependencies]
 ab_glyph = "0.2"
 ab_glyph_rasterizer = "0.1"
-parley = { version = "0.12", optional = true, default-features = false, features = ["std"] }
+parley = { version = "0.12", optional = true, default-features = false, features = ["std", "system"] }
 
 [lints.rust]
 missing_docs = "deny"

@@ -153,11 +153,11 @@ fn baselines() -> Vec<(&'static str, u64, u64)> {
 // Baseline hashes are filled in by the bootstrap test below; the table
 // goes green after the first local run records them.
 const GOLDEN_DARK_ALPHA: u64 = 0xdd50_b1ad_2cb8_384d;
-const GOLDEN_DARK_RGB: u64 = 0xc729_ab7e_42fa_790a;
+const GOLDEN_DARK_RGB: u64 = 0xacb6_79c9_c1f9_7e78;
 const GOLDEN_LIGHT_ALPHA: u64 = 0xdd50_b1ad_2cb8_384d;
-const GOLDEN_LIGHT_RGB: u64 = 0x7222_e68a_8de1_17fc;
+const GOLDEN_LIGHT_RGB: u64 = 0x8e85_4f6c_0238_55a0;
 const GOLDEN_HC_ALPHA: u64 = 0xdd50_b1ad_2cb8_384d;
-const GOLDEN_HC_RGB: u64 = 0x1a1d_6fdf_e9bf_2cdd;
+const GOLDEN_HC_RGB: u64 = 0x0097_b9b8_cfab_a2df;
 
 #[test]
 fn gallery_is_deterministic() {
