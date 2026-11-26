@@ -47,7 +47,7 @@ text-kit = { path = "crates/text-kit", version = "0.8.7" }
 widget-kit = { path = "crates/widget-kit", version = "0.8.7" }
 window-kit = { path = "crates/window-kit", version = "0.8.7", default-features = false }
 fx = { path = "crates/fx", version = "0.8.7" }
-criterion = "0.7"
+criterion = "0.8"
 
 [profile.release]
 lto = "fat"
