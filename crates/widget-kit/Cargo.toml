@@ -24,9 +24,9 @@ ui-text-edit = "0.1"
 [features]
 # Shaped labels: Parley (via text-kit) provides bidi-correct glyph
 # order and font-metric advances; default on.
-shaping = ["text-kit/parley"]
+shaping = ["text-kit/parley", "text-kit/dlopen-fonts"]
 strip-renderer = ["paint-kit/sparse-strip"]
-default = ["shaping"]
+default = []
 accesskit = ["dep:accesskit"]
 
 [dependencies.accesskit]

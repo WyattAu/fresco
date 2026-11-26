@@ -353,6 +353,70 @@ fn corpus_matches_golden_frame_keys() -> Result<(), Box<dyn std::error::Error>> 
     Ok(())
 }
 
+/// Oracle (shaped-corpus feature): the corpus renders deterministically
+/// through the Parley-shaped path too - two exports of the same scene
+/// produce identical hashes. Cross-machine shaped keys are not pinned
+/// (font stacks differ); determinism is the contract, the default
+/// per-char corpus is the byte contract.
+#[cfg(feature = "shaped-corpus")]
+#[test]
+fn shaped_render_is_deterministic() -> Result<(), Box<dyn std::error::Error>> {
+    use text_kit::parley_backend::ParleyEngine;
+    use text_kit::{ShapeQuery, TextEngine};
+    let probe = {
+        let mut engine = ParleyEngine::new();
+        !engine
+            .shape(&ShapeQuery {
+                text: "ab",
+                font: text_kit::parley_backend::PARLEY_FONT,
+                px_size: 16.0,
+                letter_spacing: 0.0,
+            })
+            .glyphs
+            .is_empty()
+    };
+    if !probe {
+        eprintln!("skip: no fonts on this runner");
+        return Ok(());
+    }
+    let hash_run = || -> Result<u64, Box<dyn std::error::Error>> {
+        let mut draw = scenes()
+            .into_iter()
+            .find(|(n, _)| *n == "widgets")
+            .map(|(_, f)| f)
+            .ok_or("missing scene")?;
+        let dir = std::env::temp_dir().join(format!(
+            "video-kit-shaped-{}-{}",
+            std::process::id(),
+            u64::from(
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.subsec_nanos())
+                    .unwrap_or(0)
+            )
+        ));
+        let mut sink = BmpSequenceSink::new(&dir, "s")?;
+        export(W, H, FPS, FRAMES, &mut sink, &mut |t, surface| {
+            draw(t, surface)
+        })?;
+        sink.finish()?;
+        let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+        for index in 0..FRAMES {
+            let bytes = std::fs::read(dir.join(format!("s_{index:05}.bmp")))?;
+            for byte in video_kit::fnv1a(&bytes).to_le_bytes() {
+                hash ^= u64::from(byte);
+                hash = hash.wrapping_mul(0x0100_0000_01b3);
+            }
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+        Ok(hash)
+    };
+    let a = hash_run()?;
+    let b = hash_run()?;
+    assert_eq!(a, b, "shaped corpus render is deterministic");
+    Ok(())
+}
+
 /// Prints the current per-frame keys to paste into `baselines`.
 #[test]
 fn corpus_bootstraps_baseline_hashes() -> Result<(), Box<dyn std::error::Error>> {

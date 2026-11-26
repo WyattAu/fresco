@@ -18,6 +18,9 @@ paint-kit = { workspace = true }
 
 [features]
 default = []
+# Pin the shaped-render corpus keys (requires system fonts; the
+# default corpus pins the per-char render instead).
+shaped-corpus = ["widget-kit/shaping"]
 # External ffmpeg pipe backend (rawvideo stdin -> libx264). The oracle
 # test skips gracefully when the ffmpeg binary is absent.
 ffmpeg = []
@@ -25,6 +28,7 @@ ffmpeg = []
 [dev-dependencies]
 audio-kit = { workspace = true }
 scene-kit = { workspace = true }
+text-kit = { workspace = true }
 widget-kit = { workspace = true }
 
 [lints.rust]

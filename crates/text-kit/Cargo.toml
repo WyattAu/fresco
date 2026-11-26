@@ -11,13 +11,19 @@ categories = ["graphics", "text-processing"]
 exclude = ["/target"]
 
 [features]
-default = ["parley"]
+default = []
 parley = ["dep:parley"]
+# System font discovery without build-time fontconfig headers
+# (dlopen at runtime). Implies parley.
+dlopen-fonts = ["parley", "fontique/fontconfig-dlopen"]
 
 [dependencies]
 ab_glyph = "0.2"
 ab_glyph_rasterizer = "0.1"
 parley = { version = "0.12", optional = true, default-features = false, features = ["std", "system"] }
+# Forwarded so the parley backend can build with fontconfig dlopen
+# (no pkg-config or fontconfig headers at build time).
+fontique = { version = "0.12", optional = true, default-features = false }
 
 [lints.rust]
 missing_docs = "deny"

@@ -2332,6 +2332,7 @@ version = "0.8.7"
 dependencies = [
  "ab_glyph",
  "ab_glyph_rasterizer",
+ "fontique",
  "parley",
 ]
 
@@ -2600,6 +2601,7 @@ dependencies = [
  "audio-kit",
  "paint-kit",
  "scene-kit",
+ "text-kit",
  "widget-kit",
 ]
 
